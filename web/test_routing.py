@@ -1,7 +1,14 @@
+import math
+
 from django.test import SimpleTestCase
 
 from Model.utils.road_graph import RoadGraph
-from Model.utils.routing import dijkstra, modified_a_star
+from Model.utils.routing import (
+    SearchLimitExceeded,
+    dijkstra,
+    dijkstra_to_any,
+    modified_a_star,
+)
 
 
 def build_test_graph():
@@ -104,3 +111,39 @@ class ModifiedAStarTests(SimpleTestCase):
         )
 
         self.assertIsNone(result)
+
+
+class RoutingValidationTests(SimpleTestCase):
+    def test_rejects_edge_shorter_than_endpoint_geodesic(self):
+        graph = RoadGraph()
+        graph.add_node("A", 0.0, 0.0)
+        graph.add_node("B", 0.0, 0.0009)
+
+        with self.assertRaises(ValueError):
+            graph.add_edge("A-B", "A", "B", 1.0, ((0.0, 0.0), (0.0, 0.0009)))
+
+    def test_rejects_non_finite_cost_inputs(self):
+        graph = build_test_graph()
+
+        for kwargs in [
+            {"beta": math.nan},
+            {"risk_by_edge": {"A-B": math.inf}},
+            {"edge_penalties": {"A-B": math.nan}},
+        ]:
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                dijkstra(graph, "A", "D", **kwargs)
+
+    def test_search_limit_stops_excessive_work(self):
+        graph = build_test_graph()
+
+        with self.assertRaises(SearchLimitExceeded):
+            dijkstra(graph, "A", "D", max_nodes_explored=1)
+
+    def test_multi_source_search_finds_first_reachable_goal(self):
+        graph = build_test_graph()
+        graph.add_node("X", 1.0, 1.0)
+
+        result = dijkstra_to_any(graph, ["X", "B"], ["D"])
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.node_ids, ("B", "D"))

@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase
 
+from Model.utils.risk_scoring import EdgeRiskScores
 from Model.utils.road_graph import RoadGraph
 from Model.utils.route_service import generate_route_options, shared_interior_edge_ratio
 
@@ -96,3 +97,18 @@ class RouteServiceTests(SimpleTestCase):
         )
 
         self.assertEqual(ratio, 0.0)
+
+    def test_uncovered_route_has_unknown_safety_and_no_safest_label(self):
+        risks = EdgeRiskScores(
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+            frozenset(),
+            None,
+        )
+
+        options = generate_route_options(self.graph, "A", "D", risks)
+
+        self.assertTrue(options)
+        self.assertFalse(any("safest" in option.labels for option in options))
+        self.assertTrue(all(option.risk_score is None for option in options))
+        self.assertTrue(all(option.safety_score is None for option in options))
+        self.assertTrue(all(option.risk_level == "unknown" for option in options))

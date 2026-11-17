@@ -69,3 +69,46 @@ class RiskScoringTests(SimpleTestCase):
         self.assertAlmostEqual(risk_from_exposure(1.0), 1 - math.exp(-1.0))
         self.assertEqual(risk_from_exposure(-1.0), 0.0)
         self.assertLessEqual(risk_from_exposure(1000.0), 1.0)
+
+    def test_exact_duplicate_incidents_are_counted_once(self):
+        incident = {
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "severity": 5,
+            "description": "Same incident",
+        }
+        incidents = pd.DataFrame([incident, incident.copy()])
+
+        scores = RiskScorer(incidents).score_edges(self.graph.edges)
+
+        self.assertAlmostEqual(scores["A-B"], 1 - math.exp(-1.0))
+
+    def test_malformed_incident_does_not_abort_scoring(self):
+        incidents = pd.DataFrame(
+            [
+                {"latitude": "bad", "longitude": 0.0, "severity": 5},
+                {"latitude": 0.0, "longitude": 0.0, "severity": 5},
+            ]
+        )
+
+        scores = RiskScorer(incidents).score_edges(self.graph.edges)
+
+        self.assertGreater(scores["A-B"], 0.6)
+
+    def test_coverage_is_separate_from_incident_magnitude(self):
+        graph = RoadGraph()
+        graph.add_node("A", 10.0, 10.0)
+        graph.add_node("B", 10.0, 10.01)
+        graph.add_edge(
+            "A-B",
+            "A",
+            "B",
+            1112.0,
+            ((10.0, 10.0), (10.0, 10.01)),
+        )
+        incidents = pd.DataFrame([{"latitude": 0.0, "longitude": 0.0, "severity": 5}])
+
+        scores = RiskScorer(incidents).score_edges(graph.edges)
+
+        self.assertEqual(scores["A-B"], 0.0)
+        self.assertNotIn("A-B", scores.covered_edge_ids)

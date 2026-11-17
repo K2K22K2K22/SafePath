@@ -1,9 +1,12 @@
+from dataclasses import replace
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.test import SimpleTestCase
 
 from Model.utils.osm_graph import RoadDataUnavailable
 from Model.utils.route_service import RouteNotFound, RouteOption
+from Model.views import RoutesRateThrottle
 
 
 def route_option():
@@ -31,6 +34,9 @@ def route_option():
 
 
 class RoutesApiTests(SimpleTestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_returns_structured_route_contract(self):
         with patch(
             "Model.views.calculate_route_options", return_value=[route_option()]
@@ -108,3 +114,72 @@ class RoutesApiTests(SimpleTestCase):
             )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_returns_bad_request_for_excessive_route_span(self):
+        with patch(
+            "Model.views.calculate_route_options",
+            side_effect=ValueError("Route span is too large."),
+        ):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_serializes_unknown_safety_without_claiming_a_score(self):
+        option = replace(
+            route_option(),
+            risk_score=None,
+            safety_score=None,
+            risk_level="unknown",
+            risk_data_available=False,
+            incident_coverage_ratio=0.0,
+        )
+        with patch("Model.views.calculate_route_options", return_value=[option]):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        route = response.json()["routes"][0]
+        self.assertIsNone(route["risk_score"])
+        self.assertIsNone(route["safety_score"])
+        self.assertEqual(route["risk_level"], "unknown")
+        self.assertEqual(route["incident_coverage_ratio"], 0.0)
+
+    def test_route_endpoint_is_throttled(self):
+        params = {
+            "start_lat": "28.475",
+            "start_lon": "77.477",
+            "end_lat": "28.476",
+            "end_lon": "77.477",
+        }
+        with (
+            patch.object(
+                RoutesRateThrottle,
+                "THROTTLE_RATES",
+                {"routes": "2/minute"},
+            ),
+            patch("Model.views.calculate_route_options", return_value=[route_option()]),
+        ):
+            statuses = [
+                self.client.get(
+                    "/api/routes/", params, HTTP_HOST="localhost"
+                ).status_code
+                for _ in range(3)
+            ]
+
+        self.assertEqual(statuses, [200, 200, 429])
