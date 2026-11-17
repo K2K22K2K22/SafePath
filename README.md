@@ -30,12 +30,18 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Start the server 
+3. Configure the application
+```
+cp .env.example .env
+```
+Replace `DJANGO_SECRET_KEY` with a random value. Set `DJANGO_DEBUG=False` in production.
+
+4. Start the server
 ```
 python manage.py runserver
 ```
 
-4. Visit 127.0.0.1:8000 <br>
+5. Visit 127.0.0.1:8000 <br>
 
 
 ## License
