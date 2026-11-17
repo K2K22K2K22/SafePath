@@ -58,6 +58,9 @@ def routes(request):
     )
 
 
+routes.cls.throttle_scope = "routes"
+
+
 def _coordinate(value, name, minimum, maximum):
     if value is None or value == "":
         raise ValueError(f"Missing required coordinate: {name}.")

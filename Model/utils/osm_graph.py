@@ -355,7 +355,7 @@ def _build_graph_from_xml(osm_xml):
 def _parse_osm_document(document):
     if not isinstance(document, bytes):
         raise RoadDataUnavailable("Road data document must be bytes.")
-    if re.search(rb"<\s*(DOCTYPE|ENTITY)", document, flags=re.IGNORECASE):
+    if re.search(rb"<!\s*(DOCTYPE|ENTITY)", document, flags=re.IGNORECASE):
         raise RoadDataUnavailable(
             "Road data document contains prohibited XML declarations."
         )
