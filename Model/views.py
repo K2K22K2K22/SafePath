@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from .utils.osm_graph import RoadDataUnavailable
+from .utils.risk_scoring import INCIDENT_RADIUS_METERS, RiskScorer
 from .utils.route_service import RouteNotFound, calculate_route_options
 
 
@@ -17,6 +18,42 @@ class RoutesRateThrottle(ScopedRateThrottle):
 
 class GeocodeRateThrottle(ScopedRateThrottle):
     scope = "geocode"
+
+
+class HeatmapRateThrottle(ScopedRateThrottle):
+    scope = "heatmap"
+
+
+@api_view(["GET"])
+@throttle_classes([HeatmapRateThrottle])
+def safety_heatmap(request):
+    try:
+        incidents = RiskScorer().incidents
+    except (OSError, ValueError):
+        return Response(
+            {"detail": "Incident data is temporarily unavailable."},
+            status=503,
+        )
+
+    points = [
+        {
+            "lat": latitude,
+            "lon": longitude,
+            "intensity": round(intensity, 4),
+        }
+        for longitude, latitude, intensity in incidents
+    ]
+    return Response(
+        {
+            "points": points,
+            "radius_meters": INCIDENT_RADIUS_METERS,
+            "record_count": len(points),
+            "source": "bundled_csv",
+        }
+    )
+
+
+safety_heatmap.cls.throttle_scope = "heatmap"
 
 
 @api_view(["GET"])

@@ -1,10 +1,15 @@
 const ROUTES_URL = "/api/routes/";
 const GEOCODE_URL = "/api/geocode/";
+const HEATMAP_URL = "/api/safety-heatmap/";
 const ROUTE_COLORS = ["#087f5b", "#2563eb", "#7c3aed", "#ea580c"];
 const DEFAULT_START = { lat: 28.474780644693578, lon: 77.47638190820159 };
 
 const state = {
     destination: null,
+    heatData: null,
+    heatLayer: null,
+    heatmapEnabled: false,
+    heatmapLoading: false,
     map: null,
     origin: null,
     routeColors: new Map(),
@@ -22,6 +27,8 @@ const elements = {
     directionsButton: document.getElementById("directions-btn"),
     emptyState: document.getElementById("route-empty-state"),
     fromInput: document.getElementById("from-input"),
+    heatmapStatus: document.getElementById("heatmap-status"),
+    heatmapToggle: document.getElementById("heatmap-toggle"),
     loadingState: document.getElementById("route-loading-state"),
     mapStatus: document.getElementById("map-status"),
     routeCount: document.getElementById("route-count"),
@@ -333,6 +340,83 @@ function updateRouteLayerStyles() {
     });
 }
 
+function heatRadiusPixels() {
+    if (!state.heatData) {
+        return 25;
+    }
+    const center = state.map.getCenter();
+    const metersPerPixel =
+        (156543.03392 * Math.cos((center.lat * Math.PI) / 180)) /
+        2 ** state.map.getZoom();
+    return Math.max(
+        4,
+        Math.min(60, state.heatData.radius_meters / metersPerPixel),
+    );
+}
+
+function updateHeatRadius() {
+    if (state.heatLayer) {
+        state.heatLayer.setOptions({ radius: heatRadiusPixels() });
+    }
+}
+
+async function toggleHeatmap() {
+    if (state.heatmapEnabled) {
+        state.map.removeLayer(state.heatLayer);
+        state.heatLayer = null;
+        state.heatmapEnabled = false;
+        elements.heatmapToggle.setAttribute("aria-pressed", "false");
+        elements.heatmapStatus.textContent = "Heatmap off";
+        return;
+    }
+    if (state.heatmapLoading) {
+        return;
+    }
+    if (typeof L.heatLayer !== "function") {
+        elements.heatmapStatus.textContent = "Heatmap could not be loaded.";
+        return;
+    }
+
+    state.heatmapLoading = true;
+    elements.heatmapToggle.disabled = true;
+    elements.heatmapStatus.textContent = "Loading bundled incident records...";
+
+    try {
+        const data = state.heatData || (await fetchJson(HEATMAP_URL, {}, 10000));
+        state.heatData = data;
+        if (!data.points.length) {
+            elements.heatmapStatus.textContent = "No bundled incident records are available.";
+            return;
+        }
+
+        const points = data.points.map((point) => [
+            point.lat,
+            point.lon,
+            point.intensity,
+        ]);
+        state.heatLayer = L.heatLayer(points, {
+            blur: 0.35,
+            gradient: {
+                0.2: "#fef3c7",
+                0.45: "#fbbf24",
+                0.7: "#fb7185",
+                1: "#b42318",
+            },
+            max: 1,
+            minOpacity: 0.3,
+            radius: heatRadiusPixels(),
+        }).addTo(state.map);
+        state.heatmapEnabled = true;
+        elements.heatmapToggle.setAttribute("aria-pressed", "true");
+        elements.heatmapStatus.textContent = `${data.record_count} incident records, ${data.radius_meters} m influence radius`;
+    } catch (error) {
+        elements.heatmapStatus.textContent = error.message;
+    } finally {
+        state.heatmapLoading = false;
+        elements.heatmapToggle.disabled = false;
+    }
+}
+
 function setLoading(isLoading) {
     elements.loadingState.classList.toggle("hidden", !isLoading);
     elements.loadingState.classList.toggle("grid", isLoading);
@@ -519,6 +603,7 @@ function swapLocations() {
     }
 }
 
+state.map.on("zoomend", updateHeatRadius);
 state.map.on("click", (event) => {
     const location = { lat: event.latlng.lat, lon: event.latlng.lng };
 
@@ -542,6 +627,7 @@ state.map.on("click", (event) => {
 
 elements.routeForm.addEventListener("submit", searchRoutes);
 elements.clearButton.addEventListener("click", clearAll);
+elements.heatmapToggle.addEventListener("click", toggleHeatmap);
 elements.setStart.addEventListener("click", () => setSelectionMode("start"));
 elements.setDestination.addEventListener("click", () => setSelectionMode("destination"));
 elements.swapButton.addEventListener("click", swapLocations);

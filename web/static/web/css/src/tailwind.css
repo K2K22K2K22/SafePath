@@ -291,6 +291,10 @@
     color: var(--accent-strong) !important;
   }
 
+  .leaflet-heatmap-layer {
+    pointer-events: none;
+  }
+
   .map-marker {
     display: grid;
     width: 1.5rem;

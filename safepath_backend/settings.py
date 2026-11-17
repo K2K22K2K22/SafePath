@@ -133,6 +133,7 @@ STATIC_URL = "static/"
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "geocode": os.environ.get("SAFEPATH_GEOCODE_THROTTLE_RATE", "30/minute"),
+        "heatmap": os.environ.get("SAFEPATH_HEATMAP_THROTTLE_RATE", "60/minute"),
         "routes": os.environ.get("SAFEPATH_ROUTE_THROTTLE_RATE", "20/minute"),
     },
 }
