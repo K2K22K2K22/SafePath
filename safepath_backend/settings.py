@@ -132,6 +132,22 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+SAFEPATH_GRAPH_CACHE_TTL_SECONDS = int(os.environ.get('SAFEPATH_GRAPH_CACHE_TTL_SECONDS', '86400'))
+SAFEPATH_GRAPH_PADDING_METERS = int(os.environ.get('SAFEPATH_GRAPH_PADDING_METERS', '3000'))
+SAFEPATH_HTTP_USER_AGENT = os.environ.get(
+    'SAFEPATH_HTTP_USER_AGENT',
+    'SAFE Path Django application (https://github.com/LilSuperUser/SafePath)',
+)
+SAFEPATH_MAX_SNAP_DISTANCE_METERS = int(os.environ.get('SAFEPATH_MAX_SNAP_DISTANCE_METERS', '1000'))
+SAFEPATH_OSM_API_MAX_AREA = float(os.environ.get('SAFEPATH_OSM_API_MAX_AREA', '0.20'))
+SAFEPATH_OSM_API_MAX_BYTES = int(os.environ.get('SAFEPATH_OSM_API_MAX_BYTES', '50000000'))
+SAFEPATH_OSM_API_URL = os.environ.get(
+    'SAFEPATH_OSM_API_URL',
+    'https://api.openstreetmap.org/api/0.6/map',
+)
+SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS = int(os.environ.get('SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS', '30'))
+SAFEPATH_SNAP_CANDIDATE_LIMIT = int(os.environ.get('SAFEPATH_SNAP_CANDIDATE_LIMIT', '25'))
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 

@@ -2,7 +2,6 @@ from django.test import SimpleTestCase
 
 from Model.utils.osm_graph import _build_graph_from_xml
 
-
 OSM_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6" generator="test">
   <node id="1" lat="28.4750" lon="77.4770" />

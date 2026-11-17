@@ -137,7 +137,9 @@ This decision preserves the existing architecture while meeting the reusable-com
 
 ### 4.2 Road graph source
 
-No road database or road graph exists in the repository. OSMnx 2.1.2 will be used only to download and model an OpenStreetMap driving graph. It will not provide the route shortest-path calculation.
+No road database or road graph exists in the repository. The official OpenStreetMap Map API will provide bounded road-data snapshots for the requested route area. A small XML parser will convert drivable OSM ways into the project's directed graph. The custom routing engine will not use an external routing algorithm.
+
+This source was selected after live audit checks showed that the public Overpass endpoints were unavailable or at capacity from the development environment, while the official Map API returned valid OSM data. The Map API route is also cached, uses bounded requests, and avoids adding a large geospatial runtime dependency.
 
 The custom routing engine will operate on the resulting directed, weighted graph:
 
@@ -212,7 +214,7 @@ The diversity threshold will be documented and tested. It will be applied after 
 - Distance is the sum of the lengths of the exact graph edges in the selected path.
 - Kilometres are presentation values derived from metres, never a separate calculation.
 - Geometry uses the backend edge geometry and retains intermediate points.
-- Travel time uses OSMnx travel-time estimates based on available road speed data and documented road-class fallbacks.
+- Travel time uses OSM `maxspeed` values when available and documented road-class fallback speeds otherwise.
 - The response will identify travel time as estimated and include its source.
 
 ## 5. Planned API changes
@@ -401,7 +403,7 @@ node --check
 npm run test:e2e
 ```
 
-Tests that require public Overpass, tile, or geocoding services will be separate optional smoke tests. Required CI tests will be deterministic and offline.
+Tests that require public OSM API, tile, or geocoding services will be separate optional smoke tests. Required CI tests will be deterministic and offline.
 
 ## 9. Implementation phases and commits
 
@@ -427,8 +429,8 @@ Each commit will contain one coherent, checked change. Existing history will not
 
 | Risk or dependency | Impact | Mitigation |
 |---|---|---|
-| OpenStreetMap Overpass availability and rate limits | Slow or failed graph download | Bounded timeout, in-process cache, retry with expanded area, clear 503 response |
-| OSMnx and geospatial dependency footprint | Larger Python installation | Pin one maintained release and use it only for graph acquisition and modelling |
+| OpenStreetMap Map API availability and usage limits | Slow or failed road-data download | Bounded timeout, in-process cache, bounded area, clear 503 response |
+| OSM road-data parsing and topology limits | Missing roads or turn restrictions | Preserve actual one-way edges, test the parser with fixtures, and document the limitations |
 | Sparse and unverified incident CSV | Weak or misleading safety claims | Label the source and coverage, never describe it as real-time, avoid claiming safety where coverage is absent |
 | OSM graph incompleteness and turn restrictions | Route may differ from a production router | Document the limitation and do not claim full turn-restriction support |
 | Public tile and geocoding policies | Throttling or blocked requests | Attribution, conservative client usage, server-side geocoding proxy with timeout and user agent |
