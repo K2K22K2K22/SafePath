@@ -1,6 +1,8 @@
 __pycache__/
 
 venv/
+node_modules/
+.playwright-cli/
 .env/
 .env.bak/
 *.env

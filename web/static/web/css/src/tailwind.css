@@ -1,0 +1,341 @@
+@import "tailwindcss";
+@source "../../../templates/**/*.html";
+@source "../../../js/**/*.js";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --canvas: #f3f6f5;
+  --surface: #ffffff;
+  --surface-subtle: #f8faf9;
+  --surface-strong: #e8eeec;
+  --ink: #14201d;
+  --ink-muted: #5d6c68;
+  --line: #dce5e2;
+  --accent: #087f5b;
+  --accent-strong: #066849;
+  --accent-soft: #e4f5ef;
+  --warning: #a15c00;
+  --warning-soft: #fff3dc;
+  --danger: #b42318;
+  --danger-soft: #fff0ee;
+  --map-panel: #e8eeec;
+  --shadow: 0 18px 45px rgb(20 32 29 / 0.09);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --canvas: #0c1412;
+  --surface: #14201d;
+  --surface-subtle: #182723;
+  --surface-strong: #22332e;
+  --ink: #edf7f3;
+  --ink-muted: #a4b5b0;
+  --line: #2b3d38;
+  --accent: #42d3a0;
+  --accent-strong: #6ce2b8;
+  --accent-soft: #153b30;
+  --warning: #f6bd60;
+  --warning-soft: #3a2c16;
+  --danger: #fda29b;
+  --danger-soft: #44211f;
+  --map-panel: #17231f;
+  --shadow: 0 18px 45px rgb(0 0 0 / 0.28);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-strong: var(--surface-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: "Avenir Next", Avenir, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    min-width: 320px;
+    background: var(--canvas);
+  }
+
+  body {
+    min-height: 100vh;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+}
+
+@layer components {
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  .eyebrow {
+    color: var(--accent-strong);
+    font-size: 0.6875rem;
+    font-weight: 750;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .field-label {
+    color: var(--ink-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .field-control {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    background: var(--surface-subtle);
+    color: var(--ink);
+    padding: 0.75rem 0.875rem;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .field-control::placeholder {
+    color: color-mix(in srgb, var(--ink-muted) 75%, transparent);
+  }
+
+  .field-control:hover {
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  }
+
+  .field-control:focus {
+    border-color: var(--accent);
+    outline: 3px solid color-mix(in srgb, var(--accent) 16%, transparent);
+    outline-offset: 0;
+  }
+
+  .primary-button {
+    display: inline-flex;
+    min-height: 2.875rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    background: var(--accent);
+    color: #ffffff;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 750;
+    transition: background-color 150ms ease, transform 150ms ease;
+  }
+
+  .primary-button:hover:not(:disabled) {
+    background: var(--accent-strong);
+  }
+
+  .primary-button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .primary-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .secondary-button {
+    display: inline-flex;
+    min-height: 2.4rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .secondary-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+    background: var(--surface-subtle);
+  }
+
+  .secondary-button[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .route-card {
+    border: 1px solid var(--line);
+    border-radius: 0.9rem;
+    background: var(--surface);
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .route-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+    transform: translateY(-1px);
+  }
+
+  .route-card[data-selected="true"] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  .route-card[data-selected="true"] .route-swatch {
+    background: var(--accent);
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-radius: 999px;
+    background: var(--surface-subtle);
+    color: var(--ink-muted);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 650;
+  }
+
+  .status-pill[data-tone="success"] {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .status-pill[data-tone="warning"] {
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
+  .status-pill[data-tone="error"] {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .map-shell {
+    position: relative;
+    min-height: 38rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    background: var(--map-panel);
+    box-shadow: var(--shadow);
+  }
+
+  .map-overlay {
+    position: absolute;
+    z-index: 500;
+    border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+    border-radius: 0.8rem;
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    box-shadow: 0 10px 30px rgb(20 32 29 / 0.13);
+    backdrop-filter: blur(10px);
+  }
+
+  .leaflet-container {
+    background: var(--map-panel);
+    font-family: var(--font-sans);
+  }
+
+  .leaflet-control-zoom a,
+  .leaflet-control-attribution {
+    border-color: var(--line) !important;
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+  }
+
+  .leaflet-control-zoom a:hover {
+    background: var(--surface-subtle) !important;
+  }
+
+  .leaflet-control-attribution a {
+    color: var(--accent-strong) !important;
+  }
+
+  .map-marker {
+    display: grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    place-items: center;
+    border: 3px solid #ffffff;
+    border-radius: 999px;
+    box-shadow: 0 5px 14px rgb(0 0 0 / 0.28);
+  }
+
+  .map-marker-origin {
+    background: #087f5b;
+  }
+
+  .map-marker-destination {
+    background: #d94841;
+  }
+
+  .map-marker::after {
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: #ffffff;
+    content: "";
+  }
+
+  .skeleton {
+    background: var(--surface-strong);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

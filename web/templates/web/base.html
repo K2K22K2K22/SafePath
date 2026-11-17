@@ -1,35 +1,59 @@
 {% load static %}
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SafePath</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Compare shorter and safety-aware road routes with transparent incident-based scoring.">
+    <link rel="icon" href="{% static 'web/images/favicon.svg' %}" type="image/svg+xml">
+    <title>{% block title %}SAFE PATH{% endblock %}</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script>
+        (() => {
+            let savedTheme = null;
+            try {
+                savedTheme = localStorage.getItem("safepath-theme");
+            } catch (error) {
+                savedTheme = null;
+            }
+            const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+            document.documentElement.dataset.theme = savedTheme || preferredTheme;
+        })();
+    </script>
 
-    <link rel="stylesheet" href="{% static 'web/css/style.css' %}">
-
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+    <link rel="stylesheet" href="{% static 'web/css/app.css' %}">
 
     {% block extra_head %}{% endblock %}
 </head>
+<body class="min-h-screen bg-canvas text-ink antialiased">
+    <header class="border-b border-line bg-surface">
+        <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+            <a class="flex items-center gap-3 rounded-lg" href="{% url 'Home' %}" aria-label="SAFE PATH home">
+                <span class="grid size-10 place-items-center rounded-xl bg-accent text-white shadow-sm" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 21s7-5.1 7-12A7 7 0 1 0 5 9c0 6.9 7 12 7 12Z"/>
+                        <circle cx="12" cy="9" r="2.2"/>
+                    </svg>
+                </span>
+                <span>
+                    <span class="block text-sm font-extrabold tracking-[0.14em] text-ink">SAFE PATH</span>
+                    <span class="block text-xs text-ink-muted">Choose your route with context</span>
+                </span>
+            </a>
+            <div class="hidden items-center gap-2 sm:flex">
+                <span class="status-pill" data-tone="success">
+                    <span class="size-1.5 rounded-full bg-accent" aria-hidden="true"></span>
+                    Bundled incident data
+                </span>
+            </div>
+        </div>
+    </header>
 
-<body>
+    {% block content %}{% endblock %}
 
-    <div>
-        {% block content %}
-        
-        
-        {% endblock %}
-    </div>
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
     {% block extra_js %}{% endblock %}
-    
-
-
 </body>
 </html>
-

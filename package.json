@@ -1,0 +1,14 @@
+{
+  "name": "safepath",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SAFE PATH frontend tooling",
+  "scripts": {
+    "build:css": "tailwindcss -i ./web/static/web/css/src/tailwind.css -o ./web/static/web/css/app.css --minify",
+    "watch:css": "tailwindcss -i ./web/static/web/css/src/tailwind.css -o ./web/static/web/css/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.18",
+    "tailwindcss": "4.1.18"
+  }
+}

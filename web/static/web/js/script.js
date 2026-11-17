@@ -1,225 +1,494 @@
-const SAFE_ROUTE_URL = "/api/safe-route/";
+const ROUTES_URL = "/api/routes/";
+const GEOCODE_URL = "/api/geocode/";
+const DEFAULT_START = { lat: 28.474780644693578, lon: 77.47638190820159 };
 
-    const map = L.map("map").setView([28.6139, 77.209], 30);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+const state = {
+    destination: null,
+    map: null,
+    origin: null,
+    routeLayer: null,
+    routes: [],
+    selectedRouteId: null,
+    selectionMode: "destination",
+};
 
-    let clickCount = 0;
-    let userMarker = null;   // start
-    let destMarker = null;   // destination
+const elements = {
+    clearButton: document.getElementById("clear"),
+    comparisonBody: document.getElementById("comparison-body"),
+    comparisonPanel: document.getElementById("comparison-panel"),
+    directionsButton: document.getElementById("directions-btn"),
+    emptyState: document.getElementById("route-empty-state"),
+    fromInput: document.getElementById("from-input"),
+    loadingState: document.getElementById("route-loading-state"),
+    mapStatus: document.getElementById("map-status"),
+    routeCount: document.getElementById("route-count"),
+    routeForm: document.getElementById("route-form"),
+    routeList: document.getElementById("route-list"),
+    routeStatus: document.getElementById("route-status"),
+    setDestination: document.getElementById("set-destination"),
+    setStart: document.getElementById("set-start"),
+    swapButton: document.getElementById("swap-locations"),
+    toInput: document.getElementById("to-input"),
+};
 
-    let originalLayer = null;
-    let safeLayer = null;
+state.map = L.map("map").setView([28.5639, 77.219], 11);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+}).addTo(state.map);
 
-    const statusEl = document.getElementById("status");
-    const statsEl = document.getElementById("stats");
+function setStatus(message, tone = "neutral") {
+    const pill = document.createElement("span");
+    pill.className = "status-pill";
+    pill.dataset.tone = tone;
+    pill.textContent = message;
+    elements.routeStatus.replaceChildren(pill);
+}
 
-    function setStatus(text) {
-        statusEl.textContent = text;
-    }
+function setMapStatus(message) {
+    elements.mapStatus.textContent = message;
+}
 
-    function setUserLocation(lat, lon) {
-        if (userMarker) userMarker.setLatLng([lat, lon]);
-        else userMarker = L.marker([lat, lon], { title: "You" }).addTo(map);
-        map.setView([lat, lon], 15);
-        setStatus("Location acquired.");
-    }
-
-    const fallback_start = [28.474780644693578, 77.47638190820159];
-    setStatus("Requesting location...");
-
-    if (navigator.geolocation) {
-
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            setUserLocation(pos.coords.latitude, pos.coords.longitude);
-            clickCount = 1;  // geolocation acts as first click
-        },
-        err => {
-            console.warn("geolocation error", err);
-            setStatus("Using default starting location.");
-            setUserLocation(fallback_start[0], fallback_start[1]);
-            clickCount = 1;
-        },
-            { enableHighAccuracy: true }
-    );
-    } else {
-        setStatus("Geolocation not supported. Using default starting location.");
-        setUserLocation(fallback_start[0], fallback_start[1]);
-        clickCount = 1;
-    }
-
-    // CLEAR BUTTON
-    document.getElementById('clear').addEventListener('click', function () {
-        if (originalLayer) map.removeLayer(originalLayer);
-        if (safeLayer) map.removeLayer(safeLayer);
-        if (userMarker) map.removeLayer(userMarker);
-        if (destMarker) map.removeLayer(destMarker);
-
-        originalLayer = null;
-        safeLayer = null;
-        userMarker = null;
-        destMarker = null;
-
-        clickCount = 0;
-
-        statsEl.innerHTML = '';
-        setStatus("Cleared. Click map to choose start, then destination.");
-    });
-
-    // MAP CLICK HANDLER
-    map.on('click', async function (e) {
-    clickCount++;
-
-    // FIRST CLICK → START
-    if (clickCount === 1) {
-        userMarker = L.marker(e.latlng, { title: "Start" }).addTo(map);
-        setStatus("Start selected. Now click destination.");
-        return;
-    }
-
-    // SECOND CLICK → DESTINATION + ROUTE
-    if (clickCount === 2) {
-        destMarker = L.marker(e.latlng, { title: "Destination" }).addTo(map);
-        setStatus("Destination selected. Fetching safe route…");
-
-        await requestSafeRouteAndDraw(
-        userMarker.getLatLng().lat,
-        userMarker.getLatLng().lng,
-        destMarker.getLatLng().lat,
-        destMarker.getLatLng().lng
-        );
-
-        return;
-    }
-
-    // THIRD CLICK → RESET + NEW START
-    if (clickCount >= 3) {
-        if (originalLayer) map.removeLayer(originalLayer);
-        if (safeLayer) map.removeLayer(safeLayer);
-        if (userMarker) map.removeLayer(userMarker);
-        if (destMarker) map.removeLayer(destMarker);
-
-        originalLayer = null;
-        safeLayer = null;
-        userMarker = null;
-        destMarker = null;
-
-        clickCount = 1; 
-        userMarker = L.marker(e.latlng, { title: "Start" }).addTo(map);
-
-        statsEl.innerHTML = "";
-        setStatus("Restarted. Start selected, click destination.");
-        return;
-    }
-    });
-
-    
-    // SAFE ROUTE DRAW
-    async function requestSafeRouteAndDraw(startLat, startLon, endLat, endLon) {
-
-    setStatus("Fetching routes...");
-    const url = `${SAFE_ROUTE_URL}?start_lat=${startLat}&start_lon=${startLon}&end_lat=${endLat}&end_lon=${endLon}`;
+async function fetchJson(url, options = {}, timeoutMilliseconds = 15000) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMilliseconds);
 
     try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Server error " + res.status);
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
 
-        const data = await res.json();
-
-        if (originalLayer) map.removeLayer(originalLayer);
-        originalLayer = L.polyline(data.original_route.map(p => [p[0], p[1]]), {
-        weight: 6,
-        opacity: 0.0
-        }).addTo(map);
-
-        if (safeLayer) map.removeLayer(safeLayer);
-        safeLayer = L.polyline(data.safe_path.map(p => [p[0], p[1]]), {
-        weight: 6,
-        opacity: 1
-        }).addTo(map);
-
-        const allPoints = data.original_route.concat(data.safe_path).map(p => [p[0], p[1]]);
-        map.fitBounds(allPoints, { padding: [40, 40] });
-
-            statsEl.innerHTML = "";
-            const li = (txt) => {
-                const el = document.createElement("li");
-                el.textContent = txt;
-                return el;
-            };
-            statsEl.appendChild(li(`Segments (OSRM): ${data.segments}`));
-            statsEl.appendChild(li(`Graph nodes: ${data.nodes}`));
-            statsEl.appendChild(
-                li(`Distance (m): ${Math.round(data.distance_meters)}`),
-            );
-            statsEl.appendChild(
-                li(`Avg segment risk: ${Number(data.avg_risk).toFixed(3)}`),
-            );
-
-
-        setStatus("Route rendered. Original = gray, safe = green.");
-
-    } catch (err) {
-        console.error(err);
-        setStatus("Error: " + err.message);
+        if (!response.ok) {
+            throw new Error(data.detail || `Request failed with status ${response.status}.`);
+        }
+        return data;
+    } catch (error) {
+        if (error.name === "AbortError") {
+            throw new Error("The request took too long. Please try again.");
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeout);
     }
 }
-async function geocode(place) {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}`;
-    const res = await fetch(url);
-    const data = await res.json();
 
-    if (data.length === 0) return null;
-
-    return {
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon)
-    };
+function createMarkerIcon(type) {
+    return L.divIcon({
+        className: "",
+        html: `<span class="map-marker map-marker-${type}"></span>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+    });
 }
 
-document.getElementById("directions-btn").addEventListener("click", async () => {
-    const fromText = document.getElementById("from-input").value.trim();
-    const toText = document.getElementById("to-input").value.trim();
+function setMarker(type, location) {
+    const key = `${type}Marker`;
+    const icon = createMarkerIcon(type);
+    const marker = L.marker([location.lat, location.lon], {
+        icon,
+        title: type === "origin" ? "Starting location" : "Destination",
+        keyboard: true,
+    }).addTo(state.map);
+
+    if (state[key]) {
+        state.map.removeLayer(state[key]);
+    }
+    state[key] = marker;
+}
+
+function clearMarker(type) {
+    const key = `${type}Marker`;
+    if (state[key]) {
+        state.map.removeLayer(state[key]);
+        state[key] = null;
+    }
+}
+
+function setSelectionMode(mode) {
+    state.selectionMode = mode;
+    elements.setStart.setAttribute("aria-pressed", String(mode === "start"));
+    elements.setDestination.setAttribute("aria-pressed", String(mode === "destination"));
+    setMapStatus(
+        mode === "start"
+            ? "Click the map to set your starting location."
+            : "Click the map to set your destination.",
+    );
+}
+
+function formatDistance(distanceMeters) {
+    if (!Number.isFinite(distanceMeters)) {
+        return "Not available";
+    }
+    if (distanceMeters < 1000) {
+        return `${Math.round(distanceMeters)} m`;
+    }
+    return `${(distanceMeters / 1000).toFixed(distanceMeters < 10000 ? 1 : 0)} km`;
+}
+
+function formatDuration(durationSeconds) {
+    if (!Number.isFinite(durationSeconds)) {
+        return "Not available";
+    }
+    const minutes = Math.max(1, Math.round(durationSeconds / 60));
+    if (minutes < 60) {
+        return `${minutes} min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes ? `${hours} hr ${remainingMinutes} min` : `${hours} hr`;
+}
+
+function formatLabel(label) {
+    return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function routeTitle(route) {
+    if (!route.labels.length) {
+        return `Route ${route.id.replace("route-", "")}`;
+    }
+    return `${route.labels.map(formatLabel).join(" + ")} route`;
+}
+
+function riskLabel(route) {
+    if (!route.risk_data_available || !route.risk_level) {
+        return "Not rated";
+    }
+    return formatLabel(route.risk_level);
+}
+
+function safetyLabel(route) {
+    if (!route.risk_data_available || route.safety_score === null) {
+        return "Not rated";
+    }
+    return `${route.safety_score}/100`;
+}
+
+function createBadge(label) {
+    const badge = document.createElement("span");
+    const toneClasses = {
+        safest: "bg-accent-soft text-accent-strong",
+        shortest: "bg-surface-strong text-ink",
+        balanced: "bg-warning-soft text-warning",
+        alternative: "bg-surface-strong text-ink-muted",
+    };
+    badge.className = `rounded-full px-2 py-0.5 text-[0.65rem] font-extrabold ${toneClasses[label] || toneClasses.alternative}`;
+    badge.textContent = formatLabel(label);
+    return badge;
+}
+
+function renderRouteCards(routes) {
+    const template = document.getElementById("route-card-template");
+    const fragment = document.createDocumentFragment();
+
+    routes.forEach((route) => {
+        const card = template.content.firstElementChild.cloneNode(true);
+        const button = card.querySelector("[data-route-select]");
+        const badges = card.querySelector("[data-route-badges]");
+
+        card.dataset.routeId = route.id;
+        button.dataset.routeId = route.id;
+        route.labels.forEach((label) => badges.appendChild(createBadge(label)));
+        card.querySelector("[data-route-title]").textContent = routeTitle(route);
+        card.querySelector("[data-route-distance]").textContent = formatDistance(route.distance_meters);
+        card.querySelector("[data-route-duration]").textContent = formatDuration(route.duration_seconds);
+        card.querySelector("[data-route-safety]").textContent = safetyLabel(route);
+        card.querySelector("[data-route-risk]").textContent = riskLabel(route);
+        card.querySelector("[data-route-explanation]").textContent = route.explanation;
+        card.querySelector("[data-route-algorithm]").textContent =
+            route.algorithm === "modified_astar" ? "Modified A* objective" : "Dijkstra objective";
+        button.addEventListener("click", () => selectRoute(route.id));
+        fragment.appendChild(card);
+    });
+
+    elements.routeList.replaceChildren(fragment);
+    elements.emptyState.classList.add("hidden");
+    updateRouteSelection();
+}
+
+function renderComparison(routes) {
+    const template = document.getElementById("comparison-row-template");
+    const fragment = document.createDocumentFragment();
+
+    routes.forEach((route) => {
+        const row = template.content.firstElementChild.cloneNode(true);
+        row.querySelector("[data-comparison-route]").textContent = routeTitle(route);
+        row.querySelector("[data-comparison-distance]").textContent = formatDistance(route.distance_meters);
+        row.querySelector("[data-comparison-duration]").textContent = formatDuration(route.duration_seconds);
+        row.querySelector("[data-comparison-safety]").textContent = safetyLabel(route);
+        row.querySelector("[data-comparison-risk]").textContent = riskLabel(route);
+        fragment.appendChild(row);
+    });
+
+    elements.comparisonBody.replaceChildren(fragment);
+    elements.comparisonPanel.classList.toggle("hidden", routes.length === 0);
+}
+
+function updateRouteSelection() {
+    elements.routeList.querySelectorAll("[data-route-card]").forEach((card) => {
+        const selected = card.dataset.routeId === state.selectedRouteId;
+        card.dataset.selected = String(selected);
+        const button = card.querySelector("[data-route-select]");
+        const action = card.querySelector("[data-route-action]");
+        button.setAttribute("aria-pressed", String(selected));
+        action.textContent = selected ? "Selected" : "View route";
+    });
+}
+
+function selectRoute(routeId, fitBounds = true) {
+    const route = state.routes.find((candidate) => candidate.id === routeId);
+    if (!route) {
+        return;
+    }
+
+    state.selectedRouteId = routeId;
+    updateRouteSelection();
+    drawSelectedRoute(route, fitBounds);
+}
+
+function drawSelectedRoute(route, fitBounds = true) {
+    if (state.routeLayer) {
+        state.map.removeLayer(state.routeLayer);
+    }
+
+    const points = route.geometry.map(([lat, lon]) => [lat, lon]);
+    if (!points.length) {
+        return;
+    }
+
+    state.routeLayer = L.polyline(points, {
+        color: "#087f5b",
+        weight: 7,
+        opacity: 0.94,
+        lineCap: "round",
+        lineJoin: "round",
+    }).addTo(state.map);
+
+    if (fitBounds) {
+        state.map.fitBounds(state.routeLayer.getBounds(), {
+            padding: [48, 48],
+            maxZoom: 17,
+        });
+    }
+}
+
+function setLoading(isLoading) {
+    elements.loadingState.classList.toggle("hidden", !isLoading);
+    elements.loadingState.classList.toggle("grid", isLoading);
+    elements.directionsButton.disabled = isLoading;
+    elements.directionsButton.querySelector("[data-button-label]").textContent = isLoading
+        ? "Finding routes"
+        : "Find routes";
+}
+
+async function requestRoutes() {
+    if (!state.origin || !state.destination) {
+        setStatus("Choose both a starting location and a destination.", "warning");
+        return;
+    }
+
+    setLoading(true);
+    elements.emptyState.classList.add("hidden");
+    setStatus("Loading road data and comparing routes...");
+    setMapStatus("Calculating route options...");
+
+    const query = new URLSearchParams({
+        start_lat: String(state.origin.lat),
+        start_lon: String(state.origin.lon),
+        end_lat: String(state.destination.lat),
+        end_lon: String(state.destination.lon),
+    });
+
+    try {
+        const data = await fetchJson(`${ROUTES_URL}?${query}`, {}, 45000);
+        state.routes = data.routes;
+        state.selectedRouteId = null;
+
+        renderRouteCards(state.routes);
+        renderComparison(state.routes);
+        elements.routeCount.textContent = `${data.route_count} ${data.route_count === 1 ? "route" : "routes"}`;
+
+        const initialRoute =
+            state.routes.find((route) => route.labels.includes("safest")) || state.routes[0];
+        if (initialRoute) {
+            selectRoute(initialRoute.id);
+        }
+
+        setStatus(`${data.route_count} route ${data.route_count === 1 ? "option" : "options"} ready to compare.`, "success");
+        setMapStatus("Route options calculated. Select a card to change the highlighted route.");
+    } catch (error) {
+        state.routes = [];
+        state.selectedRouteId = null;
+        elements.routeList.replaceChildren();
+        elements.comparisonBody.replaceChildren();
+        elements.comparisonPanel.classList.add("hidden");
+        elements.routeCount.textContent = "0 routes";
+        elements.emptyState.classList.remove("hidden");
+        setStatus(error.message, "error");
+        setMapStatus("Routes could not be loaded.");
+    } finally {
+        setLoading(false);
+    }
+}
+
+async function geocode(query) {
+    const data = await fetchJson(`${GEOCODE_URL}?q=${encodeURIComponent(query)}`, {}, 10000);
+    return data.results[0] || null;
+}
+
+async function resolveLocation(input, existingLocation) {
+    const text = input.value.trim();
+    const mapLabels = new Set(["Current location", "Sample starting point", "Map point"]);
+    if (existingLocation && mapLabels.has(text)) {
+        return existingLocation;
+    }
+    return geocode(text);
+}
+
+async function searchRoutes(event) {
+    event.preventDefault();
+    const fromText = elements.fromInput.value.trim();
+    const toText = elements.toInput.value.trim();
 
     if (!fromText || !toText) {
-        alert("Please enter both locations.");
+        setStatus("Enter both a starting location and a destination.", "warning");
         return;
     }
 
-    setStatus("Finding locations...");
+    elements.directionsButton.disabled = true;
+    elements.directionsButton.querySelector("[data-button-label]").textContent = "Finding locations";
+    setStatus("Resolving both locations...");
 
-    const fromLoc = await geocode(fromText);
-    const toLoc = await geocode(toText);
+    try {
+        const [origin, destination] = await Promise.all([
+            resolveLocation(elements.fromInput, state.origin),
+            resolveLocation(elements.toInput, state.destination),
+        ]);
 
-    if (!fromLoc) {
-        setStatus("Starting location not found.");
-        return;
+        if (!origin || !destination) {
+            const missing = !origin && !destination ? "both locations" : !origin ? "the starting location" : "the destination";
+            throw new Error(`Could not find ${missing}. Try a more specific place name.`);
+        }
+
+        state.origin = origin;
+        state.destination = destination;
+        elements.fromInput.value = origin.label || fromText;
+        elements.toInput.value = destination.label || toText;
+        setMarker("origin", origin);
+        setMarker("destination", destination);
+        state.map.fitBounds(
+            L.latLngBounds(
+                [origin.lat, origin.lon],
+                [destination.lat, destination.lon],
+            ),
+            { padding: [48, 48], maxZoom: 16 },
+        );
+        await requestRoutes();
+    } catch (error) {
+        setStatus(error.message, "error");
+        setMapStatus("Locations could not be resolved.");
+    } finally {
+        elements.directionsButton.disabled = false;
+        elements.directionsButton.querySelector("[data-button-label]").textContent = "Find routes";
     }
-    if (!toLoc) {
-        setStatus("Destination not found.");
-        return;
+}
+
+function useCurrentLocation(position) {
+    state.origin = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+    };
+    state.destination = null;
+    elements.fromInput.value = "Current location";
+    setMarker("origin", state.origin);
+    state.map.setView([state.origin.lat, state.origin.lon], 14);
+    setSelectionMode("destination");
+    setStatus("Starting location acquired. Choose a destination.");
+    setMapStatus("Starting location acquired. Choose a destination.");
+}
+
+function useDefaultLocation() {
+    state.origin = { ...DEFAULT_START };
+    state.destination = null;
+    elements.fromInput.value = "Sample starting point";
+    setMarker("origin", state.origin);
+    state.map.setView([state.origin.lat, state.origin.lon], 14);
+    setSelectionMode("destination");
+    setStatus("Location unavailable. Using the sample start. Change it any time.", "warning");
+    setMapStatus("Sample start selected. Choose a destination.");
+}
+
+function clearAll() {
+    state.destination = null;
+    state.origin = null;
+    state.routes = [];
+    state.selectedRouteId = null;
+    clearMarker("origin");
+    clearMarker("destination");
+    if (state.routeLayer) {
+        state.map.removeLayer(state.routeLayer);
+        state.routeLayer = null;
+    }
+    elements.fromInput.value = "";
+    elements.toInput.value = "";
+    elements.routeList.replaceChildren();
+    elements.comparisonBody.replaceChildren();
+    elements.comparisonPanel.classList.add("hidden");
+    elements.routeCount.textContent = "0 routes";
+    setStatus("Locations and routes cleared.", "success");
+    setSelectionMode("destination");
+    state.map.setView([28.5639, 77.219], 11);
+}
+
+function swapLocations() {
+    const fromValue = elements.fromInput.value;
+    elements.fromInput.value = elements.toInput.value;
+    elements.toInput.value = fromValue;
+
+    if (state.origin && state.destination) {
+        const origin = state.origin;
+        state.origin = state.destination;
+        state.destination = origin;
+        setMarker("origin", state.origin);
+        setMarker("destination", state.destination);
+        requestRoutes();
+    }
+}
+
+state.map.on("click", (event) => {
+    const location = { lat: event.latlng.lat, lon: event.latlng.lng };
+
+    if (state.selectionMode === "start") {
+        state.origin = location;
+        elements.fromInput.value = "Map point";
+        setMarker("origin", location);
+        setSelectionMode("destination");
+        setStatus("Starting location selected. Choose a destination.");
+    } else {
+        state.destination = location;
+        elements.toInput.value = "Map point";
+        setMarker("destination", location);
+        setStatus("Destination selected. Finding routes...");
     }
 
-    // Place markers
-    if (userMarker) map.removeLayer(userMarker);
-    if (destMarker) map.removeLayer(destMarker);
-
-    userMarker = L.marker([fromLoc.lat, fromLoc.lon], { title: "Start" }).addTo(map);
-    destMarker = L.marker([toLoc.lat, toLoc.lon], { title: "Destination" }).addTo(map);
-
-    map.setView([fromLoc.lat, fromLoc.lon], 15);
-
-    // Fetch safe path
-    setStatus("Fetching route...");
-    await requestSafeRouteAndDraw(
-        fromLoc.lat,
-        fromLoc.lon,
-        toLoc.lat,
-        toLoc.lon
-    );
+    if (state.origin && state.destination) {
+        requestRoutes();
+    }
 });
-userMarker = L.marker([fromLoc.lat, fromLoc.lon], { icon: startIcon });
-destMarker = L.marker([toLoc.lat, toLoc.lon], { icon: endIcon });
+
+elements.routeForm.addEventListener("submit", searchRoutes);
+elements.clearButton.addEventListener("click", clearAll);
+elements.setStart.addEventListener("click", () => setSelectionMode("start"));
+elements.setDestination.addEventListener("click", () => setSelectionMode("destination"));
+elements.swapButton.addEventListener("click", swapLocations);
+
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+        useCurrentLocation,
+        useDefaultLocation,
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 },
+    );
+} else {
+    useDefaultLocation();
+}

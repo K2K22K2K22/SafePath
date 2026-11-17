@@ -1,5 +1,8 @@
 import math
+from urllib.parse import urlparse
 
+import requests
+from django.conf import settings
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -10,6 +13,87 @@ from .utils.route_service import RouteNotFound, calculate_route_options
 
 class RoutesRateThrottle(ScopedRateThrottle):
     scope = "routes"
+
+
+class GeocodeRateThrottle(ScopedRateThrottle):
+    scope = "geocode"
+
+
+@api_view(["GET"])
+@throttle_classes([GeocodeRateThrottle])
+def geocode(request):
+    query = request.GET.get("q", "").strip()
+    if len(query) < 2:
+        return Response({"detail": "Enter at least two characters."}, status=400)
+    if len(query) > 200:
+        return Response({"detail": "Location search is too long."}, status=400)
+
+    try:
+        url = _validated_geocoder_url()
+        response = requests.get(
+            url,
+            params={
+                "format": "jsonv2",
+                "q": query,
+                "limit": 5,
+                "addressdetails": 0,
+            },
+            headers={
+                "Accept": "application/json",
+                "Accept-Language": "en",
+                "User-Agent": settings.SAFEPATH_HTTP_USER_AGENT,
+            },
+            timeout=(3, settings.SAFEPATH_GEOCODER_TIMEOUT_SECONDS),
+            allow_redirects=False,
+        )
+        if 300 <= response.status_code < 400:
+            return Response(
+                {"detail": "Location service redirects were rejected."},
+                status=503,
+            )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException:
+        return Response(
+            {"detail": "Location search is temporarily unavailable. Please try again."},
+            status=503,
+        )
+    except (TypeError, ValueError):
+        return Response(
+            {"detail": "Location search returned an invalid response."},
+            status=503,
+        )
+
+    results = []
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            try:
+                latitude = float(item["lat"])
+                longitude = float(item["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (
+                math.isfinite(latitude)
+                and math.isfinite(longitude)
+                and -90 <= latitude <= 90
+                and -180 <= longitude <= 180
+            ):
+                continue
+            label = str(item.get("display_name", "")).strip()
+            results.append(
+                {
+                    "lat": latitude,
+                    "lon": longitude,
+                    "label": label or f"{latitude}, {longitude}",
+                }
+            )
+
+    return Response({"results": results, "source": "nominatim"})
+
+
+geocode.cls.throttle_scope = "geocode"
 
 
 @api_view(["GET"])
@@ -59,6 +143,24 @@ def routes(request):
 
 
 routes.cls.throttle_scope = "routes"
+
+
+def _validated_geocoder_url():
+    url = settings.SAFEPATH_GEOCODER_URL
+    parsed = urlparse(url)
+    allowed_hosts = {
+        host.strip().lower() for host in settings.SAFEPATH_GEOCODER_ALLOWED_HOSTS
+    }
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.hostname.lower() not in allowed_hosts
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in {None, 443}
+    ):
+        raise ValueError("Location service URL is not allowed.")
+    return url
 
 
 def _coordinate(value, name, minimum, maximum):

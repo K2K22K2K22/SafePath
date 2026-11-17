@@ -132,10 +132,26 @@ STATIC_URL = "static/"
 
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
+        "geocode": os.environ.get("SAFEPATH_GEOCODE_THROTTLE_RATE", "30/minute"),
         "routes": os.environ.get("SAFEPATH_ROUTE_THROTTLE_RATE", "20/minute"),
     },
 }
 
+SAFEPATH_GEOCODER_ALLOWED_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get(
+        "SAFEPATH_GEOCODER_ALLOWED_HOSTS",
+        "nominatim.openstreetmap.org",
+    ).split(",")
+    if host.strip()
+)
+SAFEPATH_GEOCODER_TIMEOUT_SECONDS = int(
+    os.environ.get("SAFEPATH_GEOCODER_TIMEOUT_SECONDS", "8")
+)
+SAFEPATH_GEOCODER_URL = os.environ.get(
+    "SAFEPATH_GEOCODER_URL",
+    "https://nominatim.openstreetmap.org/search",
+)
 SAFEPATH_GRAPH_CACHE_MAX_ENTRIES = int(
     os.environ.get("SAFEPATH_GRAPH_CACHE_MAX_ENTRIES", "8")
 )
