@@ -2,6 +2,17 @@ const ROUTES_URL = "/api/routes/";
 const GEOCODE_URL = "/api/geocode/";
 const HEATMAP_URL = "/api/safety-heatmap/";
 const ROUTE_COLORS = ["#087f5b", "#2563eb", "#7c3aed", "#ea580c"];
+const TILE_CONFIG = {
+    light: {
+        url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+    dark: {
+        url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: "abcd",
+    },
+};
 const DEFAULT_START = { lat: 28.474780644693578, lon: 77.47638190820159 };
 
 const state = {
@@ -19,6 +30,7 @@ const state = {
     selectedRouteId: null,
     selectionMode: "destination",
     theme: document.documentElement.dataset.theme || "light",
+    tileLayer: null,
 };
 
 const elements = {
@@ -49,10 +61,23 @@ const elements = {
 state.map = L.map("map").setView([28.5639, 77.219], 11);
 state.map.createPane("routePane").style.zIndex = 450;
 state.routeLayerGroup = L.layerGroup().addTo(state.map);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
-}).addTo(state.map);
+state.tileLayer = createTileLayer(state.theme).addTo(state.map);
+
+function createTileLayer(theme) {
+    const config = TILE_CONFIG[theme] || TILE_CONFIG.light;
+    return L.tileLayer(config.url, {
+        attribution: config.attribution,
+        maxZoom: 19,
+        subdomains: config.subdomains || "abc",
+    });
+}
+
+function updateTileLayer(theme) {
+    if (state.tileLayer) {
+        state.map.removeLayer(state.tileLayer);
+    }
+    state.tileLayer = createTileLayer(theme).addTo(state.map);
+}
 
 function applyTheme(theme, persist = true) {
     const nextTheme = theme === "dark" ? "dark" : "light";
@@ -64,6 +89,10 @@ function applyTheme(theme, persist = true) {
         `Switch to ${nextTheme === "dark" ? "light" : "dark"} theme`,
     );
     elements.themeLabel.textContent = nextTheme === "dark" ? "Light" : "Dark";
+
+    if (state.tileLayer) {
+        updateTileLayer(nextTheme);
+    }
 
     if (persist) {
         try {
