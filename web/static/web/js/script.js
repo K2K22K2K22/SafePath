@@ -97,7 +97,7 @@ function applyTheme(theme, persist = true) {
     if (persist) {
         try {
             localStorage.setItem("safepath-theme", nextTheme);
-        } catch (error) {
+        } catch {
             return;
         }
     }
@@ -132,7 +132,9 @@ async function fetchJson(url, options = {}, timeoutMilliseconds = 15000) {
         return data;
     } catch (error) {
         if (error.name === "AbortError") {
-            throw new Error("The request took too long. Please try again.");
+            throw new Error("The request took too long. Please try again.", {
+                cause: error,
+            });
         }
         throw error;
     } finally {

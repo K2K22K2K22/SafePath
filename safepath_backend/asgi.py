@@ -14,6 +14,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'safepath_backend.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "safepath_backend.settings")
 
 application = get_asgi_application()

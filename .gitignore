@@ -3,6 +3,9 @@ __pycache__/
 venv/
 node_modules/
 .playwright-cli/
+playwright-report/
+test-results/
+coverage/
 .env/
 .env.bak/
 *.env

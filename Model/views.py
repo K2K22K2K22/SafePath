@@ -25,6 +25,11 @@ class HeatmapRateThrottle(ScopedRateThrottle):
 
 
 @api_view(["GET"])
+def health(request):
+    return Response({"status": "ok"})
+
+
+@api_view(["GET"])
 @throttle_classes([HeatmapRateThrottle])
 def safety_heatmap(request):
     try:

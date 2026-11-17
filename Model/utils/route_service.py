@@ -6,6 +6,7 @@ from django.conf import settings
 
 from .osm_graph import RoadDataUnavailable, load_road_graph
 from .risk_scoring import EdgeRiskScores, RiskScorer
+from .road_graph import RoadGraph
 from .routing import (
     PathResult,
     SearchLimitExceeded,
@@ -18,7 +19,9 @@ BALANCED_RISK_WEIGHT = 2.0
 SAFEST_RISK_WEIGHT = 8.0
 DIVERSITY_THRESHOLD = 0.75
 EDGE_PENALTY_MULTIPLIER = 2.0
-_RISK_CACHE = weakref.WeakKeyDictionary()
+_RISK_CACHE: weakref.WeakKeyDictionary[RoadGraph, EdgeRiskScores] = (
+    weakref.WeakKeyDictionary()
+)
 _RISK_CACHE_LOCK = threading.RLock()
 
 

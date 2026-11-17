@@ -1,15 +1,11 @@
-# Model/utils/crime_loader.py
+from pathlib import Path
+
 import pandas as pd
-import os
+
+DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "delhi_crime_data.csv"
+
 
 def load_crime_data():
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    csv_path = os.path.join(BASE_DIR, "data", "delhi_crime_data.csv")
-
-    df = pd.read_csv(csv_path)
-
-    # Normalize all column names to lowercase
-    df.columns = df.columns.str.lower()
-
-    return df
-
+    dataframe = pd.read_csv(DATA_FILE)
+    dataframe.columns = dataframe.columns.str.lower()
+    return dataframe

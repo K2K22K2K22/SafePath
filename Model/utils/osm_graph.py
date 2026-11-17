@@ -66,9 +66,13 @@ PHYSICAL_BARRIERS = {
     "turnstile",
 }
 GATE_BARRIERS = {"gate", "lift_gate"}
-_GRAPH_CACHE = OrderedDict()
+_GRAPH_CACHE: OrderedDict[
+    tuple[float, float, float, float], tuple[float, RoadGraph]
+] = OrderedDict()
 _GRAPH_CACHE_LOCK = threading.RLock()
-_GRAPH_LOAD_LOCKS = weakref.WeakValueDictionary()
+_GRAPH_LOAD_LOCKS: weakref.WeakValueDictionary[
+    tuple[float, float, float, float], threading.Lock
+] = weakref.WeakValueDictionary()
 _GRAPH_LOAD_LOCKS_GUARD = threading.Lock()
 
 

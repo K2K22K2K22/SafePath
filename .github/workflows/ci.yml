@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DJANGO_DEBUG: "True"
+      SAFEPATH_PYTHON: python
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: pip install --requirement requirements-dev.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: Mypy
+        run: mypy Model web safepath_backend manage.py
+
+      - name: Django checks and tests
+        run: |
+          python manage.py check
+          python manage.py test --verbosity 2
+          python -m compileall -q Model web safepath_backend manage.py
+
+      - name: Frontend build and lint
+        run: |
+          npm run build:css
+          git diff --exit-code -- web/static/web/css/app.css
+          npm run lint:js
+          npm run check:js
+
+      - name: Browser regression tests
+        run: npm run test:e2e
+
+      - name: Docker build and health check
+        run: |
+          docker build --tag safepath-ci .
+          docker run --detach --name safepath-ci \
+            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+            --publish 8000:8000 safepath-ci
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs safepath-ci
+          exit 1

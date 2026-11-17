@@ -5,10 +5,17 @@
   "description": "SAFE PATH frontend tooling",
   "scripts": {
     "build:css": "tailwindcss -i ./web/static/web/css/src/tailwind.css -o ./web/static/web/css/app.css --minify",
+    "check:js": "node --check web/static/web/js/script.js",
+    "lint:js": "eslint web/static/web/js",
+    "test:e2e": "playwright test",
     "watch:css": "tailwindcss -i ./web/static/web/css/src/tailwind.css -o ./web/static/web/css/app.css --watch"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/cli": "4.1.18",
+    "eslint": "10.15.0",
+    "globals": "17.14.0",
     "tailwindcss": "4.1.18"
   }
 }
