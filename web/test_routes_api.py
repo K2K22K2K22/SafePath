@@ -21,6 +21,7 @@ def route_option():
         safety_score=90,
         risk_level="low",
         risk_data_available=True,
+        incident_coverage_ratio=1.0,
         nodes_explored=4,
         computation_time_ms=1.25,
         path_cost=1000.1,
@@ -31,7 +32,9 @@ def route_option():
 
 class RoutesApiTests(SimpleTestCase):
     def test_returns_structured_route_contract(self):
-        with patch("Model.views.calculate_route_options", return_value=[route_option()]):
+        with patch(
+            "Model.views.calculate_route_options", return_value=[route_option()]
+        ):
             response = self.client.get(
                 "/api/routes/",
                 {

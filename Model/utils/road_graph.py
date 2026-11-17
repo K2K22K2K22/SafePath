@@ -2,6 +2,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+from .geometry_utils import haversine
+
+MINIMUM_DISTANCE_RATIO = 0.99
+
 
 @dataclass(frozen=True)
 class RoadNode:
@@ -69,6 +73,27 @@ class RoadGraph:
             raise ValueError("Edge distance must be a finite non-negative number.")
         if not geometry:
             raise ValueError("Edge geometry must contain at least one point.")
+        if not all(
+            math.isfinite(latitude)
+            and math.isfinite(longitude)
+            and -90 <= latitude <= 90
+            and -180 <= longitude <= 180
+            for latitude, longitude in geometry
+        ):
+            raise ValueError("Edge geometry contains an invalid coordinate.")
+
+        source_node = self.nodes[source]
+        target_node = self.nodes[target]
+        endpoint_distance = haversine(
+            source_node.latitude,
+            source_node.longitude,
+            target_node.latitude,
+            target_node.longitude,
+        )
+        if distance_meters < endpoint_distance * MINIMUM_DISTANCE_RATIO:
+            raise ValueError(
+                "Edge distance is shorter than its endpoint geodesic distance."
+            )
 
         edge = RoadEdge(
             id=edge_id,

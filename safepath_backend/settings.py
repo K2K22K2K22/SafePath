@@ -35,9 +35,7 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get(
-        "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1"
-    ).split(",")
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if host.strip()
 ]
 
@@ -45,53 +43,53 @@ ALLOWED_HOSTS = [
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'rest_framework',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'web',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "rest_framework",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "web",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'safepath_backend.urls'
+ROOT_URLCONF = "safepath_backend.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'safepath_backend.wsgi.application'
+WSGI_APPLICATION = "safepath_backend.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -101,16 +99,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -118,9 +116,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -130,25 +128,74 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 
-SAFEPATH_GRAPH_CACHE_TTL_SECONDS = int(os.environ.get('SAFEPATH_GRAPH_CACHE_TTL_SECONDS', '86400'))
-SAFEPATH_GRAPH_PADDING_METERS = int(os.environ.get('SAFEPATH_GRAPH_PADDING_METERS', '3000'))
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "routes": os.environ.get("SAFEPATH_ROUTE_THROTTLE_RATE", "20/minute"),
+    },
+}
+
+SAFEPATH_GRAPH_CACHE_MAX_ENTRIES = int(
+    os.environ.get("SAFEPATH_GRAPH_CACHE_MAX_ENTRIES", "8")
+)
+SAFEPATH_GRAPH_CACHE_TTL_SECONDS = int(
+    os.environ.get("SAFEPATH_GRAPH_CACHE_TTL_SECONDS", "86400")
+)
+SAFEPATH_GRAPH_PADDING_METERS = int(
+    os.environ.get("SAFEPATH_GRAPH_PADDING_METERS", "3000")
+)
 SAFEPATH_HTTP_USER_AGENT = os.environ.get(
-    'SAFEPATH_HTTP_USER_AGENT',
-    'SAFE Path Django application (https://github.com/LilSuperUser/SafePath)',
+    "SAFEPATH_HTTP_USER_AGENT",
+    "SAFE Path Django application (https://github.com/LilSuperUser/SafePath)",
 )
-SAFEPATH_MAX_SNAP_DISTANCE_METERS = int(os.environ.get('SAFEPATH_MAX_SNAP_DISTANCE_METERS', '1000'))
-SAFEPATH_OSM_API_MAX_AREA = float(os.environ.get('SAFEPATH_OSM_API_MAX_AREA', '0.20'))
-SAFEPATH_OSM_API_MAX_BYTES = int(os.environ.get('SAFEPATH_OSM_API_MAX_BYTES', '50000000'))
+SAFEPATH_MAX_GRAPH_EDGES = int(os.environ.get("SAFEPATH_MAX_GRAPH_EDGES", "250000"))
+SAFEPATH_MAX_NODES_EXPLORED = int(
+    os.environ.get("SAFEPATH_MAX_NODES_EXPLORED", "100000")
+)
+SAFEPATH_MAX_ROUTE_AREA = float(os.environ.get("SAFEPATH_MAX_ROUTE_AREA", "1.0"))
+SAFEPATH_MAX_ROUTE_SPAN_METERS = int(
+    os.environ.get("SAFEPATH_MAX_ROUTE_SPAN_METERS", "50000")
+)
+SAFEPATH_MAX_SNAP_DISTANCE_METERS = int(
+    os.environ.get("SAFEPATH_MAX_SNAP_DISTANCE_METERS", "1000")
+)
+SAFEPATH_OSM_API_ALLOWED_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get(
+        "SAFEPATH_OSM_API_ALLOWED_HOSTS",
+        "api.openstreetmap.org",
+    ).split(",")
+    if host.strip()
+)
+SAFEPATH_OSM_API_MAX_AREA = float(os.environ.get("SAFEPATH_OSM_API_MAX_AREA", "0.20"))
+SAFEPATH_OSM_API_MAX_BYTES = int(
+    os.environ.get("SAFEPATH_OSM_API_MAX_BYTES", "25000000")
+)
+SAFEPATH_OSM_API_MAX_REQUESTS = int(
+    os.environ.get("SAFEPATH_OSM_API_MAX_REQUESTS", "16")
+)
+SAFEPATH_OSM_API_MAX_SPLIT_DEPTH = int(
+    os.environ.get("SAFEPATH_OSM_API_MAX_SPLIT_DEPTH", "3")
+)
+SAFEPATH_OSM_API_MAX_XML_DEPTH = int(
+    os.environ.get("SAFEPATH_OSM_API_MAX_XML_DEPTH", "8")
+)
+SAFEPATH_OSM_API_MAX_XML_ELEMENTS = int(
+    os.environ.get("SAFEPATH_OSM_API_MAX_XML_ELEMENTS", "500000")
+)
 SAFEPATH_OSM_API_URL = os.environ.get(
-    'SAFEPATH_OSM_API_URL',
-    'https://api.openstreetmap.org/api/0.6/map',
+    "SAFEPATH_OSM_API_URL",
+    "https://api.openstreetmap.org/api/0.6/map",
 )
-SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS = int(os.environ.get('SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS', '30'))
-SAFEPATH_SNAP_CANDIDATE_LIMIT = int(os.environ.get('SAFEPATH_SNAP_CANDIDATE_LIMIT', '25'))
+SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS = int(
+    os.environ.get("SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS", "30")
+)
+SAFEPATH_SNAP_CANDIDATE_LIMIT = int(
+    os.environ.get("SAFEPATH_SNAP_CANDIDATE_LIMIT", "25")
+)
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

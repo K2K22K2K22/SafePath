@@ -8,10 +8,10 @@ def build_three_route_graph():
     graph = RoadGraph()
     for node_id, latitude, longitude in [
         ("A", 0.0, 0.0),
-        ("B", 0.0, 0.0009),
-        ("C", 0.0, 0.0018),
-        ("D", 0.0, 0.0027),
-        ("E", 0.0, 0.0018),
+        ("B", 0.0009, 0.0),
+        ("C", 0.0009, 0.001558),
+        ("D", 0.0018, 0.0),
+        ("E", 0.0009, 0.001004),
     ]:
         graph.add_node(node_id, latitude, longitude)
 
@@ -82,12 +82,12 @@ class RouteServiceTests(SimpleTestCase):
         graph = RoadGraph()
         graph.add_node("A", 0.0, 0.0)
         graph.add_node("B", 0.0, 0.001)
-        graph.add_edge("A-B", "A", "B", 100.0, ((0.0, 0.0), (0.0, 0.001)))
+        graph.add_edge("A-B", "A", "B", 112.0, ((0.0, 0.0), (0.0, 0.001)))
 
         options = generate_route_options(graph, "A", "B", {"A-B": 0.0})
 
         self.assertEqual(len(options), 1)
-        self.assertEqual(options[0].distance_meters, 100.0)
+        self.assertEqual(options[0].distance_meters, 112.0)
 
     def test_shared_interior_ratio_ignores_common_start_and_end_edges(self):
         ratio = shared_interior_edge_ratio(

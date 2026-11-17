@@ -7,14 +7,14 @@ from Model.utils.routing import dijkstra, modified_a_star
 def build_test_graph():
     graph = RoadGraph()
     graph.add_node("A", 0.0, 0.0)
-    graph.add_node("B", 0.0, 0.0009)
-    graph.add_node("C", 0.0, 0.0018)
-    graph.add_node("D", 0.0, 0.0027)
+    graph.add_node("B", 0.0009, 0.0)
+    graph.add_node("C", 0.0009, 0.001558)
+    graph.add_node("D", 0.0018, 0.0)
 
-    graph.add_edge("A-B", "A", "B", 100.0, ((0.0, 0.0), (0.0, 0.0009)))
-    graph.add_edge("B-D", "B", "D", 100.0, ((0.0, 0.0009), (0.0, 0.0027)))
-    graph.add_edge("A-C", "A", "C", 200.0, ((0.0, 0.0), (0.0, 0.0018)))
-    graph.add_edge("C-D", "C", "D", 200.0, ((0.0, 0.0018), (0.0, 0.0027)))
+    graph.add_edge("A-B", "A", "B", 100.0, ((0.0, 0.0), (0.0009, 0.0)))
+    graph.add_edge("B-D", "B", "D", 100.0, ((0.0009, 0.0), (0.0018, 0.0)))
+    graph.add_edge("A-C", "A", "C", 200.0, ((0.0, 0.0), (0.0009, 0.001558)))
+    graph.add_edge("C-D", "C", "D", 200.0, ((0.0009, 0.001558), (0.0018, 0.0)))
 
     return graph
 

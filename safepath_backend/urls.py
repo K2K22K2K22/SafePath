@@ -18,10 +18,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from Model.views import safe_route
+from Model.views import routes
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("web.urls")),
-    path("api/safe-route/", safe_route, name="safe_route"),
+    path("api/routes/", routes, name="routes"),
+    path("api/safe-route/", routes, name="safe_route"),
 ]
