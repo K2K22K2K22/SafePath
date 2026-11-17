@@ -111,7 +111,7 @@ const SAFE_ROUTE_URL = "/api/safe-route/";
         userMarker = L.marker(e.latlng, { title: "Start" }).addTo(map);
 
         statsEl.innerHTML = "";
-        setStatus("Restarted. Start selected — click destination.");
+        setStatus("Restarted. Start selected, click destination.");
         return;
     }
     });
