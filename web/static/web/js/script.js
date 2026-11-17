@@ -1,12 +1,15 @@
 const ROUTES_URL = "/api/routes/";
 const GEOCODE_URL = "/api/geocode/";
+const ROUTE_COLORS = ["#087f5b", "#2563eb", "#7c3aed", "#ea580c"];
 const DEFAULT_START = { lat: 28.474780644693578, lon: 77.47638190820159 };
 
 const state = {
     destination: null,
     map: null,
     origin: null,
-    routeLayer: null,
+    routeColors: new Map(),
+    routeLayerGroup: null,
+    routeLayers: new Map(),
     routes: [],
     selectedRouteId: null,
     selectionMode: "destination",
@@ -23,6 +26,8 @@ const elements = {
     mapStatus: document.getElementById("map-status"),
     routeCount: document.getElementById("route-count"),
     routeForm: document.getElementById("route-form"),
+    routeLegend: document.getElementById("route-legend"),
+    routeLegendList: document.getElementById("route-legend-list"),
     routeList: document.getElementById("route-list"),
     routeStatus: document.getElementById("route-status"),
     setDestination: document.getElementById("set-destination"),
@@ -32,6 +37,8 @@ const elements = {
 };
 
 state.map = L.map("map").setView([28.5639, 77.219], 11);
+state.map.createPane("routePane").style.zIndex = 450;
+state.routeLayerGroup = L.layerGroup().addTo(state.map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
@@ -151,6 +158,16 @@ function routeTitle(route) {
     return `${route.labels.map(formatLabel).join(" + ")} route`;
 }
 
+function routeColor(routeId) {
+    return state.routeColors.get(routeId) || ROUTE_COLORS[0];
+}
+
+function assignRouteColors(routes) {
+    state.routeColors = new Map(
+        routes.map((route, index) => [route.id, ROUTE_COLORS[index % ROUTE_COLORS.length]]),
+    );
+}
+
 function riskLabel(route) {
     if (!route.risk_data_available || !route.risk_level) {
         return "Not rated";
@@ -189,6 +206,7 @@ function renderRouteCards(routes) {
 
         card.dataset.routeId = route.id;
         button.dataset.routeId = route.id;
+        card.querySelector(".route-swatch").style.backgroundColor = routeColor(route.id);
         route.labels.forEach((label) => badges.appendChild(createBadge(label)));
         card.querySelector("[data-route-title]").textContent = routeTitle(route);
         card.querySelector("[data-route-distance]").textContent = formatDistance(route.distance_meters);
@@ -225,6 +243,26 @@ function renderComparison(routes) {
     elements.comparisonPanel.classList.toggle("hidden", routes.length === 0);
 }
 
+function renderRouteLegend(routes) {
+    const fragment = document.createDocumentFragment();
+
+    routes.forEach((route) => {
+        const item = document.createElement("span");
+        const swatch = document.createElement("span");
+        const label = document.createElement("span");
+
+        item.className = "flex items-center gap-2";
+        swatch.className = "size-2.5 shrink-0 rounded-full";
+        swatch.style.backgroundColor = routeColor(route.id);
+        label.textContent = routeTitle(route);
+        item.append(swatch, label);
+        fragment.appendChild(item);
+    });
+
+    elements.routeLegendList.replaceChildren(fragment);
+    elements.routeLegend.hidden = routes.length === 0;
+}
+
 function updateRouteSelection() {
     elements.routeList.querySelectorAll("[data-route-card]").forEach((card) => {
         const selected = card.dataset.routeId === state.selectedRouteId;
@@ -244,33 +282,55 @@ function selectRoute(routeId, fitBounds = true) {
 
     state.selectedRouteId = routeId;
     updateRouteSelection();
-    drawSelectedRoute(route, fitBounds);
-}
+    updateRouteLayerStyles();
 
-function drawSelectedRoute(route, fitBounds = true) {
-    if (state.routeLayer) {
-        state.map.removeLayer(state.routeLayer);
-    }
-
-    const points = route.geometry.map(([lat, lon]) => [lat, lon]);
-    if (!points.length) {
-        return;
-    }
-
-    state.routeLayer = L.polyline(points, {
-        color: "#087f5b",
-        weight: 7,
-        opacity: 0.94,
-        lineCap: "round",
-        lineJoin: "round",
-    }).addTo(state.map);
-
-    if (fitBounds) {
-        state.map.fitBounds(state.routeLayer.getBounds(), {
+    const layer = state.routeLayers.get(routeId);
+    if (fitBounds && layer) {
+        state.map.fitBounds(layer.getBounds(), {
             padding: [48, 48],
             maxZoom: 17,
         });
     }
+}
+
+function drawRouteLayers(routes) {
+    state.routeLayerGroup.clearLayers();
+    state.routeLayers.clear();
+
+    routes.forEach((route) => {
+        const points = route.geometry.map(([lat, lon]) => [lat, lon]);
+        if (!points.length) {
+            return;
+        }
+
+        const layer = L.polyline(points, {
+            color: routeColor(route.id),
+            weight: 5,
+            opacity: 0.52,
+            lineCap: "round",
+            lineJoin: "round",
+            pane: "routePane",
+        });
+        layer.bindTooltip(routeTitle(route), { sticky: true });
+        state.routeLayers.set(route.id, layer);
+        state.routeLayerGroup.addLayer(layer);
+    });
+
+    updateRouteLayerStyles();
+}
+
+function updateRouteLayerStyles() {
+    state.routeLayers.forEach((layer, routeId) => {
+        const selected = routeId === state.selectedRouteId;
+        layer.setStyle({
+            color: routeColor(routeId),
+            opacity: selected ? 1 : 0.52,
+            weight: selected ? 8 : 5,
+        });
+        if (selected) {
+            layer.bringToFront();
+        }
+    });
 }
 
 function setLoading(isLoading) {
@@ -304,9 +364,12 @@ async function requestRoutes() {
         const data = await fetchJson(`${ROUTES_URL}?${query}`, {}, 45000);
         state.routes = data.routes;
         state.selectedRouteId = null;
+        assignRouteColors(state.routes);
 
+        drawRouteLayers(state.routes);
         renderRouteCards(state.routes);
         renderComparison(state.routes);
+        renderRouteLegend(state.routes);
         elements.routeCount.textContent = `${data.route_count} ${data.route_count === 1 ? "route" : "routes"}`;
 
         const initialRoute =
@@ -320,6 +383,8 @@ async function requestRoutes() {
     } catch (error) {
         state.routes = [];
         state.selectedRouteId = null;
+        drawRouteLayers([]);
+        renderRouteLegend([]);
         elements.routeList.replaceChildren();
         elements.comparisonBody.replaceChildren();
         elements.comparisonPanel.classList.add("hidden");
@@ -426,10 +491,8 @@ function clearAll() {
     state.selectedRouteId = null;
     clearMarker("origin");
     clearMarker("destination");
-    if (state.routeLayer) {
-        state.map.removeLayer(state.routeLayer);
-        state.routeLayer = null;
-    }
+    drawRouteLayers([]);
+    renderRouteLegend([]);
     elements.fromInput.value = "";
     elements.toInput.value = "";
     elements.routeList.replaceChildren();
