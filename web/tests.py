@@ -3,7 +3,10 @@ import math
 import pandas as pd
 from django.test import SimpleTestCase
 
-from Model.utils.crime_scoring import calculate_segment_risk, summarize_crime_for_segment
+from Model.utils.crime_scoring import (
+    calculate_segment_risk,
+    summarize_crime_for_segment,
+)
 from Model.utils.geometry_utils import haversine
 
 

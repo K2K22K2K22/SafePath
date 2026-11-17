@@ -1,20 +1,20 @@
 # SafePath
 
-**SafePath** is an intelligent navigation platform helps users choose **safer routes** instead of just fater ones. It analyzes real-time crime data, user reports, and police APIs to compute a dynamic Safety Index Score for every road segment while guiding people through the safest possible paths in urban areas.
+**SafePath** is a navigation platform that helps users compare safer and shorter routes through urban areas. It uses bundled incident records and deterministic road-segment risk scoring, without requiring an external AI service.
 
 ## Technical Architecture
 
-- **Frontend**: Tailwind CSS + Leaflet.js (OpenStreetMap)
-- **Backend**: Django (core server), FastAPI (supporting microservices)
-- **Database**: PostgreSQL + PostGIS for geospatial processing
+- **Frontend**: Django templates, custom CSS, and Leaflet.js with OpenStreetMap tiles
+- **Backend**: Django with Django REST Framework
+- **Database**: SQLite for Django data, plus a bundled CSV incident dataset
 
 ## How It Works
 
-- **Collect Data**: Crime stats, police API inputs, user-reported incidents.
-- **Process Geo-Data**: Normalize, geocode, and store using PostGIS.
-- **Compute Safety Index**: Weighted scoring based on crime history, density, and time-of-day.
-- **Generate Routes**: Modified Dijkstra/A* algorithm prioritizing safety over shortest path.
-- **Visualize**: Heatmaps + route overlays displayed using Leaflet.js.
+- **Collect Data**: Load the bundled crime dataset and normalise its coordinates and severity.
+- **Process Geo-Data**: Measure incident proximity to road segments.
+- **Compute Safety Index**: Apply deterministic severity and proximity scoring.
+- **Generate Routes**: Use graph search algorithms to prioritise safety or distance.
+- **Visualize**: Route overlays displayed using Leaflet.js.
 
 ## Installation & Setup
 1. Clone the repository 

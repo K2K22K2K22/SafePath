@@ -14,13 +14,14 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
+
 from Model.views import safe_route
-from django.http import JsonResponse
+
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('', include('web.urls')),
-    path('api/safe-route/', safe_route, name='safe_route'),
-    path('api/test-deepseek/', lambda r: JsonResponse({"result": test_deepseek()}))
+    path("admin/", admin.site.urls),
+    path("", include("web.urls")),
+    path("api/safe-route/", safe_route, name="safe_route"),
 ]

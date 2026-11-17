@@ -1,39 +1,51 @@
-# Model/utils/crime_scoring.py
+import math
+
 import pandas as pd
 
-from .deepseek_client import rate_segment_risk
 from .geometry_utils import haversine
 
+INCIDENT_RADIUS_METERS = 200
+MAX_SEVERITY = 5
 
-def summarize_crime_for_segment(a, b, crime_df, radius=200):
-    """Count crimes near this road segment."""
-    lat1, lon1 = a
-    lat2, lon2 = b
 
-    mid = ((lat1 + lat2) / 2, (lon1 + lon2) / 2)
+def calculate_segment_risk(summary):
+    total_crimes = int(summary.get("total_crimes", 0))
+    average_severity = float(summary.get("average_severity", 0.0))
 
-    subset = crime_df[
-        crime_df.apply(
-            lambda row: haversine(mid[0], mid[1], row["latitude"], row["longitude"]) < radius,
-            axis=1,
-        )
-    ]
+    if total_crimes <= 0:
+        return 0.0, f"No recorded incidents within {INCIDENT_RADIUS_METERS} metres."
 
-    summary = {
-        "total_crimes": len(subset),
-        "crime_types": subset["crime_type"].value_counts().to_dict()
-        if "crime_type" in subset.columns else {},
-        "average_severity": float(subset["severity"].mean()) if len(subset) > 0 else 0.0,
-    }
-
-    result = rate_segment_risk(summary)
-
-    if isinstance(result, dict):
-        risk = result.get("risk", 0.0)
-        explanation = result.get("explaination", "No explanation available.")
-    else:
-        risk = float(result)
-        explanation = "Risk inferred from model output."
+    average_severity = min(max(average_severity, 0.0), MAX_SEVERITY)
+    exposure = total_crimes * average_severity / MAX_SEVERITY
+    risk = 1 - math.exp(-exposure)
+    label = "incident" if total_crimes == 1 else "incidents"
+    explanation = (
+        f"{total_crimes} recorded {label} within {INCIDENT_RADIUS_METERS} metres, "
+        f"average severity {average_severity:.1f} out of {MAX_SEVERITY}."
+    )
 
     return risk, explanation
 
+
+def summarize_crime_for_segment(a, b, crime_df, radius=INCIDENT_RADIUS_METERS):
+    mid_lat = (a[0] + b[0]) / 2
+    mid_lon = (a[1] + b[1]) / 2
+
+    nearby_rows = [
+        row
+        for row in crime_df.itertuples(index=False)
+        if haversine(mid_lat, mid_lon, row.latitude, row.longitude) <= radius
+    ]
+    nearby = pd.DataFrame(nearby_rows)
+
+    summary = {
+        "total_crimes": len(nearby),
+        "crime_types": nearby["crime_type"].value_counts().to_dict()
+        if "crime_type" in nearby.columns
+        else {},
+        "average_severity": float(nearby["severity"].mean())
+        if len(nearby) > 0
+        else 0.0,
+    }
+
+    return calculate_segment_risk(summary)
