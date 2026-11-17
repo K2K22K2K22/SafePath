@@ -18,6 +18,7 @@ const state = {
     routes: [],
     selectedRouteId: null,
     selectionMode: "destination",
+    theme: document.documentElement.dataset.theme || "light",
 };
 
 const elements = {
@@ -40,6 +41,8 @@ const elements = {
     setDestination: document.getElementById("set-destination"),
     setStart: document.getElementById("set-start"),
     swapButton: document.getElementById("swap-locations"),
+    themeLabel: document.querySelector("[data-theme-label]"),
+    themeToggle: document.getElementById("theme-toggle"),
     toInput: document.getElementById("to-input"),
 };
 
@@ -50,6 +53,26 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
 }).addTo(state.map);
+
+function applyTheme(theme, persist = true) {
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    state.theme = nextTheme;
+    document.documentElement.dataset.theme = nextTheme;
+    elements.themeToggle.setAttribute("aria-pressed", String(nextTheme === "dark"));
+    elements.themeToggle.setAttribute(
+        "aria-label",
+        `Switch to ${nextTheme === "dark" ? "light" : "dark"} theme`,
+    );
+    elements.themeLabel.textContent = nextTheme === "dark" ? "Light" : "Dark";
+
+    if (persist) {
+        try {
+            localStorage.setItem("safepath-theme", nextTheme);
+        } catch (error) {
+            return;
+        }
+    }
+}
 
 function setStatus(message, tone = "neutral") {
     const pill = document.createElement("span");
@@ -631,6 +654,11 @@ elements.heatmapToggle.addEventListener("click", toggleHeatmap);
 elements.setStart.addEventListener("click", () => setSelectionMode("start"));
 elements.setDestination.addEventListener("click", () => setSelectionMode("destination"));
 elements.swapButton.addEventListener("click", swapLocations);
+elements.themeToggle.addEventListener("click", () => {
+    applyTheme(state.theme === "dark" ? "light" : "dark");
+});
+
+applyTheme(state.theme, false);
 
 if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
