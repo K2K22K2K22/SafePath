@@ -33,11 +33,12 @@ if not SECRET_KEY:
         )
     SECRET_KEY = secrets.token_urlsafe(50)
 
-ALLOWED_HOSTS = [
+configured_hosts = [
     host.strip()
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if host.strip()
 ]
+ALLOWED_HOSTS = list(dict.fromkeys([*configured_hosts, "localhost", "127.0.0.1"]))
 
 
 # Application definition

@@ -129,8 +129,8 @@ def generate_route_options(graph, start, end, risk_by_edge):
         ]
     )
 
-    selected = {}
-    labels = {}
+    selected: dict[tuple[str, ...], _Candidate] = {}
+    labels: dict[tuple[str, ...], list[str]] = {}
     for label, candidate in role_candidates:
         key = candidate.path.edge_ids
         selected.setdefault(key, candidate)
@@ -260,7 +260,7 @@ def _candidate_pool(
             if candidate.path is not None
         )
 
-    unique = {}
+    unique: dict[tuple[str, ...], _Candidate] = {}
     for candidate in candidates:
         unique.setdefault(candidate.path.edge_ids, candidate)
     return list(unique.values())
@@ -330,7 +330,7 @@ def _build_route_option(
 
 
 def _route_geometry(graph, path):
-    coordinates = []
+    coordinates: list[tuple[float, float]] = []
     for edge_id in path.edge_ids:
         geometry = graph.edges[edge_id].geometry
         if coordinates and coordinates[-1] == geometry[0]:

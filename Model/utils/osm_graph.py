@@ -273,7 +273,7 @@ def _build_graph_from_xml(osm_xml):
     documents = osm_xml if isinstance(osm_xml, (list, tuple)) else (osm_xml,)
     coordinates = {}
     node_tags = {}
-    ways = {}
+    ways: dict[str, tuple[str, dict[str, str], list[str]]] = {}
 
     for document in documents:
         document_coordinates, document_node_tags, document_ways = _parse_osm_document(

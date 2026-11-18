@@ -4,6 +4,12 @@ const { mockApplication, submitRoute } = require("./fixtures");
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition() {} },
+    });
+  });
   await page.emulateMedia({ colorScheme: "light" });
 });
 

@@ -99,7 +99,7 @@ def _search(
     risks = risk_by_edge or {}
     penalties = edge_penalties or {}
     counter = itertools.count()
-    queue = []
+    queue: list[tuple[float, float, int, str]] = []
     best_cost = {}
 
     for node_id in starts:

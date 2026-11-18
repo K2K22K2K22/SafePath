@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from django.test import SimpleTestCase
 
@@ -125,11 +126,12 @@ class RoutingValidationTests(SimpleTestCase):
     def test_rejects_non_finite_cost_inputs(self):
         graph = build_test_graph()
 
-        for kwargs in [
+        cases: list[dict[str, Any]] = [
             {"beta": math.nan},
             {"risk_by_edge": {"A-B": math.inf}},
             {"edge_penalties": {"A-B": math.nan}},
-        ]:
+        ]
+        for kwargs in cases:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 dijkstra(graph, "A", "D", **kwargs)
 
