@@ -98,6 +98,16 @@ Against commit `7ac17ff` in the same harness, route-option generation fell from 
 
 The Phase 7 local matrix passed 164 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime passed.
 
+## Phase 8 health, logging, and errors
+
+`/health/` and `/health/live/` remain lightweight liveness checks and do not access the database or external providers. `/health/ready/` performs only a database `SELECT 1` check, returns HTTP 503 when the database is unavailable, and does not expose connection details. Django's production error pages now include safe 404 and 500 templates.
+
+Expected API failures use typed errors with stable response codes. The covered cases are invalid coordinates, unsupported route distance, no connected path, road-provider unavailability, geocoder unavailability, rate limiting, search exploration limits, and invalid provider responses. Unexpected failures return a generic `internal_error` response without exception text or tracebacks.
+
+Django application logs use standard output and standard error. Gunicorn access logs use the URL path without its query string. Application error logs use the resolved route pattern, error code, and exception type. The shared formatter removes URL query strings and redacts exception messages. Expected client validation failures are not logged as application errors.
+
+The Phase 8 local matrix passed 178 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime verified liveness, readiness, the 404 page, query-free access logs, migrations, and graceful stop. Native Docker and remote CI evidence remains pending because no push was performed.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files

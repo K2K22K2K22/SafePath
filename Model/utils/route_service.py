@@ -4,12 +4,12 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
-from .osm_graph import RoadDataUnavailable, load_road_graph
+from .errors import RouteNotFoundError
+from .osm_graph import load_road_graph
 from .risk_scoring import EdgeRiskScores, RiskScorer
 from .road_graph import RoadGraph
 from .routing import (
     PathResult,
-    SearchLimitExceeded,
     dijkstra,
     dijkstra_to_any,
     modified_a_star,
@@ -26,7 +26,7 @@ _RISK_CACHE: weakref.WeakKeyDictionary[RoadGraph, EdgeRiskScores] = (
 _RISK_CACHE_LOCK = threading.RLock()
 
 
-class RouteNotFound(Exception):
+class RouteNotFound(RouteNotFoundError):
     pass
 
 
@@ -64,15 +64,12 @@ class _Candidate:
 def calculate_route_options(start_lat, start_lon, end_lat, end_lon):
     road_result = load_road_graph(start_lat, start_lon, end_lat, end_lon)
     risks = _risk_scores_for_graph(road_result.graph)
-    try:
-        reachable_path = dijkstra_to_any(
-            road_result.graph,
-            [node_id for node_id, _ in road_result.start_candidates],
-            [node_id for node_id, _ in road_result.end_candidates],
-            max_nodes_explored=settings.SAFEPATH_MAX_NODES_EXPLORED,
-        )
-    except SearchLimitExceeded as error:
-        raise RoadDataUnavailable("Route search exceeded its work limit.") from error
+    reachable_path = dijkstra_to_any(
+        road_result.graph,
+        [node_id for node_id, _ in road_result.start_candidates],
+        [node_id for node_id, _ in road_result.end_candidates],
+        max_nodes_explored=settings.SAFEPATH_MAX_NODES_EXPLORED,
+    )
     if reachable_path is None:
         raise RouteNotFound(
             "No connected road route was found for the requested points."

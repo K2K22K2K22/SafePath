@@ -18,7 +18,14 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from Model.views import geocode, health, routes, safety_heatmap
+from Model.views import (
+    geocode,
+    health,
+    health_live,
+    health_ready,
+    routes,
+    safety_heatmap,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -26,6 +33,8 @@ urlpatterns = [
     path("api/geocode/", geocode, name="geocode"),
     path("api/routes/", routes, name="routes"),
     path("health/", health, name="health"),
+    path("health/live/", health_live, name="health_live"),
+    path("health/ready/", health_ready, name="health_ready"),
     path("api/safety-heatmap/", safety_heatmap, name="safety_heatmap"),
     path("api/safe-route/", routes, name="safe_route"),
 ]

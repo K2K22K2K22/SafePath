@@ -184,13 +184,17 @@ GET /api/safety-heatmap/
 
 The response contains validated incident points, their normalized intensity, the 200 metre influence radius, record count, source provenance, unknown source metadata, and coverage semantics. The map layer is off by default and is independent from route layers.
 
-### Health
+### Health and errors
 
 ```text
 GET /health/
+GET /health/live/
+GET /health/ready/
 ```
 
-Returns `{"status": "ok"}` when Django can serve requests.
+`/health/` and `/health/live/` are lightweight liveness checks. They return `{"status": "ok"}` when Django can serve requests and do not call the database or external providers. `/health/ready/` performs only a database `SELECT 1` check and returns HTTP 503 with `{"status": "not_ready", "code": "database_unavailable"}` when the database cannot be reached.
+
+API failures return a safe `detail` message and a stable `code`. Expected failures include `invalid_request`, `route_not_found`, `road_provider_unavailable`, `geocoder_unavailable`, `invalid_provider_response`, `search_limit_exceeded`, and `rate_limit_exceeded`. Unexpected failures return only `{"detail": "An unexpected error occurred.", "code": "internal_error"}`. Raw exception text and tracebacks are never returned.
 
 ## Routing model
 
@@ -290,7 +294,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 164 Django tests passed
+- 178 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed
@@ -310,6 +314,7 @@ Model/
   utils/osm_graph.py          Bounded Overpass ingestion, limits, directed graph conversion
   utils/risk_scoring.py       Incident validation, proximity exposure, coverage
   utils/routing.py            Dijkstra and modified A* search core
+  utils/errors.py             Typed API errors and safe exception handling
   utils/route_service.py      Route roles, alternatives, labels, metrics
   utils/road_graph.py         Validated graph and edge structures
 web/

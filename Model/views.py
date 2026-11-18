@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import math
 import pickle
 import time
@@ -12,16 +13,22 @@ import requests
 from django.conf import settings
 from django.core.cache import caches
 from django.core.files import locks
+from django.db import connections
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from .utils.crime_loader import PUBLIC_INCIDENT_DATA_METADATA
-from .utils.osm_graph import RoadDataUnavailable
+from .utils.errors import (
+    GeocoderUnavailableError,
+    IncidentDataUnavailableError,
+    InvalidProviderResponseError,
+    InvalidRequestError,
+)
 from .utils.risk_scoring import INCIDENT_RADIUS_METERS, RiskScorer
-from .utils.route_service import RouteNotFound, calculate_route_options
-from .utils.routing import SearchLimitExceeded
+from .utils.route_service import calculate_route_options
 
+logger = logging.getLogger("safepath.errors")
 GEOCODER_REQUEST_INTERVAL_SECONDS = 1.0
 MAX_GEOCODER_RESPONSE_BYTES = 64 * 1024
 INCIDENT_COVERAGE_SEMANTICS = {
@@ -61,15 +68,41 @@ def health(request):
 
 
 @api_view(["GET"])
+def health_live(request):
+    return Response({"status": "ok"})
+
+
+@api_view(["GET"])
+def health_ready(request):
+    try:
+        with connections["default"].cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception as error:
+        logger.warning(
+            "Readiness check failed method=%s path=%s code=database_unavailable "
+            "error_type=%s",
+            request.method,
+            request.path,
+            type(error).__name__,
+        )
+        response = Response(
+            {"status": "not_ready", "code": "database_unavailable"},
+            status=503,
+        )
+        response._has_been_logged = True
+        return response
+    return Response({"status": "ready"})
+
+
+@api_view(["GET"])
 @throttle_classes([HeatmapRateThrottle])
 def safety_heatmap(request):
     try:
         incidents = RiskScorer().incidents
-    except (OSError, ValueError):
-        return Response(
-            {"detail": "Incident data is temporarily unavailable."},
-            status=503,
-        )
+    except (OSError, ValueError) as error:
+        raise IncidentDataUnavailableError(
+            "Incident data could not be loaded."
+        ) from error
 
     points = [
         {
@@ -102,18 +135,19 @@ safety_heatmap.cls.throttle_scope = "heatmap"
 def geocode(request):
     raw_query = request.GET.get("q", "").strip()
     if len(raw_query) < 2:
-        return Response({"detail": "Enter at least two characters."}, status=400)
+        raise InvalidRequestError(
+            public_message="Enter at least two characters.",
+        )
     if len(raw_query) > 200:
-        return Response({"detail": "Location search is too long."}, status=400)
+        raise InvalidRequestError(
+            public_message="Location search is too long.",
+        )
     query = _normalize_geocoder_query(raw_query)
 
     try:
         url = _validated_geocoder_url()
-    except ValueError:
-        return Response(
-            {"detail": "Location search is temporarily unavailable. Please try again."},
-            status=503,
-        )
+    except ValueError as error:
+        raise GeocoderUnavailableError("The geocoder URL is not allowed.") from error
 
     cache_key = _geocoder_cache_key(url, query)
     geocoder_cache = None
@@ -146,25 +180,22 @@ def geocode(request):
         )
         try:
             if 300 <= response.status_code < 400:
-                return Response(
-                    {"detail": "Location service redirects were rejected."},
-                    status=503,
+                raise InvalidProviderResponseError(
+                    "The geocoder redirected the request.",
+                    public_message="Location search returned an invalid response.",
                 )
             response.raise_for_status()
             payload = _read_geocoder_payload(response)
             results = _validated_geocoder_results(payload)
         finally:
             response.close()
-    except (requests.RequestException, OSError):
-        return Response(
-            {"detail": "Location search is temporarily unavailable. Please try again."},
-            status=503,
-        )
-    except (TypeError, ValueError):
-        return Response(
-            {"detail": "Location search returned an invalid response."},
-            status=503,
-        )
+    except (requests.RequestException, OSError) as error:
+        raise GeocoderUnavailableError("The geocoder request failed.") from error
+    except (TypeError, ValueError) as error:
+        raise InvalidProviderResponseError(
+            "The geocoder response was invalid.",
+            public_message="Location search returned an invalid response.",
+        ) from error
 
     if geocoder_cache is not None:
         try:
@@ -184,32 +215,12 @@ geocode.cls.throttle_scope = "geocode"
 @api_view(["GET"])
 @throttle_classes([RoutesRateThrottle])
 def routes(request):
-    try:
-        start_lat = _coordinate(request.GET.get("start_lat"), "start_lat", -90, 90)
-        start_lon = _coordinate(request.GET.get("start_lon"), "start_lon", -180, 180)
-        end_lat = _coordinate(request.GET.get("end_lat"), "end_lat", -90, 90)
-        end_lon = _coordinate(request.GET.get("end_lon"), "end_lon", -180, 180)
-    except ValueError as error:
-        return Response({"detail": str(error)}, status=400)
+    start_lat = _coordinate(request.GET.get("start_lat"), "start_lat", -90, 90)
+    start_lon = _coordinate(request.GET.get("start_lon"), "start_lon", -180, 180)
+    end_lat = _coordinate(request.GET.get("end_lat"), "end_lat", -90, 90)
+    end_lon = _coordinate(request.GET.get("end_lon"), "end_lon", -180, 180)
 
-    try:
-        options = calculate_route_options(start_lat, start_lon, end_lat, end_lon)
-    except ValueError as error:
-        return Response({"detail": str(error)}, status=400)
-    except RouteNotFound:
-        return Response(
-            {"detail": "No route was found for these coordinates."}, status=404
-        )
-    except SearchLimitExceeded:
-        return Response(
-            {"detail": "Route search temporarily exceeded its work limit."},
-            status=503,
-        )
-    except RoadDataUnavailable:
-        return Response(
-            {"detail": "Road data is temporarily unavailable. Please try again."},
-            status=503,
-        )
+    options = calculate_route_options(start_lat, start_lon, end_lat, end_lon)
 
     serialized_routes = [_serialize_route(option) for option in options]
     shortest = _route_with_label(options, "shortest") or options[0]
@@ -383,13 +394,16 @@ def _validated_geocoder_url():
 
 def _coordinate(value, name, minimum, maximum):
     if value is None or value == "":
-        raise ValueError(f"Missing required coordinate: {name}.")
+        message = f"Missing required coordinate: {name}."
+        raise InvalidRequestError(message, public_message=message)
     try:
         coordinate = float(value)
     except (TypeError, ValueError) as error:
-        raise ValueError(f"{name} must be a number.") from error
+        message = f"{name} must be a number."
+        raise InvalidRequestError(message, public_message=message) from error
     if not math.isfinite(coordinate) or not minimum <= coordinate <= maximum:
-        raise ValueError(f"{name} must be between {minimum} and {maximum}.")
+        message = f"{name} must be between {minimum} and {maximum}."
+        raise InvalidRequestError(message, public_message=message)
     return coordinate
 
 

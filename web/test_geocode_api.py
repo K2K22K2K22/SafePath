@@ -152,6 +152,7 @@ class GeocodeApiTests(SimpleTestCase):
             )
 
         self.assertEqual(first.status_code, 503)
+        self.assertEqual(first.json()["code"], "invalid_provider_response")
         self.assertEqual(second.status_code, 503)
         self.assertEqual(get.call_count, 2)
 
@@ -277,6 +278,7 @@ class GeocodeApiTests(SimpleTestCase):
             )
 
         self.assertEqual(failed.status_code, 503)
+        self.assertEqual(failed.json()["code"], "geocoder_unavailable")
         self.assertEqual(recovered.status_code, 200)
         self.assertEqual(get.call_count, 2)
 
@@ -347,6 +349,7 @@ class GeocodeApiTests(SimpleTestCase):
             )
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["code"], "geocoder_unavailable")
         self.assertNotIn("invalid response", response.content.decode())
         get.assert_not_called()
 

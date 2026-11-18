@@ -4,11 +4,12 @@ import math
 import time
 from dataclasses import dataclass
 
+from .errors import SearchLimitExceededError
 from .geometry_utils import haversine
 from .road_graph import MINIMUM_DISTANCE_RATIO
 
 
-class SearchLimitExceeded(Exception):
+class SearchLimitExceeded(SearchLimitExceededError):
     pass
 
 

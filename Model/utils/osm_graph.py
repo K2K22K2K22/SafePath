@@ -14,6 +14,7 @@ import idna
 import requests
 from django.conf import settings
 
+from .errors import InvalidRequestError, RoadProviderUnavailableError
 from .geometry_utils import haversine
 from .road_graph import RoadGraph
 
@@ -111,7 +112,7 @@ _GRAPH_LOAD_LOCKS_GUARD = threading.Lock()
 _ROAD_PROVIDER_REQUEST_LOCK = threading.RLock()
 
 
-class RoadDataUnavailable(Exception):
+class RoadDataUnavailable(RoadProviderUnavailableError):
     pass
 
 
@@ -156,7 +157,7 @@ def load_road_graph(start_lat, start_lon, end_lat, end_lon):
     _validate_coordinates(start_lat, start_lon, end_lat, end_lon)
     direct_distance = haversine(start_lat, start_lon, end_lat, end_lon)
     if direct_distance > settings.SAFEPATH_MAX_ROUTE_SPAN_METERS:
-        raise ValueError(
+        raise InvalidRequestError(
             f"Route span cannot exceed {settings.SAFEPATH_MAX_ROUTE_SPAN_METERS} metres."
         )
 
@@ -170,7 +171,7 @@ def load_road_graph(start_lat, start_lon, end_lat, end_lon):
             padding,
         )
         if _bbox_area(bbox) > settings.SAFEPATH_MAX_ROUTE_AREA:
-            raise ValueError("Requested route area is too large.")
+            raise InvalidRequestError("Requested route area is too large.")
 
         graph = _load_cached_graph(bbox)
         if graph is None:
@@ -775,8 +776,8 @@ def _validated_osm_url(require_private=None):
 def _validate_coordinates(start_lat, start_lon, end_lat, end_lon):
     coordinates = (start_lat, start_lon, end_lat, end_lon)
     if not all(math.isfinite(value) for value in coordinates):
-        raise ValueError("Coordinates must be finite numbers.")
+        raise InvalidRequestError("Coordinates must be finite numbers.")
     if not -90 <= start_lat <= 90 or not -90 <= end_lat <= 90:
-        raise ValueError("Latitude must be between -90 and 90.")
+        raise InvalidRequestError("Latitude must be between -90 and 90.")
     if not -180 <= start_lon <= 180 or not -180 <= end_lon <= 180:
-        raise ValueError("Longitude must be between -180 and 180.")
+        raise InvalidRequestError("Longitude must be between -180 and 180.")

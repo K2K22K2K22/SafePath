@@ -17,6 +17,20 @@ Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when th
 
 The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build. The image build runs `collectstatic`, and WhiteNoise serves compressed, manifest-based assets from the production runtime.
 
+## Health checks and logs
+
+`/health/` and `/health/live/` are liveness endpoints. They only confirm that Django can serve a request. They do not query the database, construct a road graph, or call OSM or Nominatim. `/health/ready/` runs a database `SELECT 1` and returns HTTP 503 when the database is unavailable. Keep liveness and readiness paths separate so a database outage does not cause the platform to restart an otherwise healthy web process.
+
+Application logs use standard output and standard error. Gunicorn access logs contain the HTTP method, path without its query string, status, response size, and duration. Error logs contain the route pattern, error code, and exception type. They do not contain query values, exception text, credentials, connection strings, or traceback exception messages. The log formatter removes URL query strings and redacts exception text as a second boundary against accidental disclosure.
+
+Inspect logs with:
+
+```bash
+docker compose logs django
+```
+
+Render exposes service logs in its dashboard. Alert on repeated HTTP 503 responses, readiness failures, and `internal_error` events. Provider failures can be transient, so confirm the configured provider status before changing application configuration.
+
 ## Production security
 
 Production startup fails when `DJANGO_SECRET_KEY` is missing, shorter than 50 characters, insufficiently varied, starts with `django-insecure-`, or contains a known placeholder marker. Generate a new secret for every environment and store it in the platform secret manager:

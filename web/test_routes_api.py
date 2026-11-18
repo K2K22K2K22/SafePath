@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.core.cache import cache
 from django.test import SimpleTestCase
 
+from Model.utils.errors import InvalidRequestError
 from Model.utils.osm_graph import RoadDataUnavailable
 from Model.utils.route_service import RouteNotFound, RouteOption
 from Model.utils.routing import SearchLimitExceeded
@@ -232,7 +233,7 @@ class RoutesApiTests(SimpleTestCase):
     def test_returns_bad_request_for_excessive_route_span(self):
         with patch(
             "Model.views.calculate_route_options",
-            side_effect=ValueError("Route span is too large."),
+            side_effect=InvalidRequestError("Route span is too large."),
         ):
             response = self.client.get(
                 "/api/routes/",
@@ -246,6 +247,7 @@ class RoutesApiTests(SimpleTestCase):
             )
 
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "invalid_request")
 
     def test_serializes_unknown_safety_without_claiming_a_score(self):
         option = replace(

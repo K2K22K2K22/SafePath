@@ -298,10 +298,57 @@ STORAGES = {
 }
 
 REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "Model.utils.errors.safepath_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
         "geocode": os.environ.get("SAFEPATH_GEOCODE_THROTTLE_RATE", "30/minute"),
         "heatmap": os.environ.get("SAFEPATH_HEATMAP_THROTTLE_RATE", "60/minute"),
         "routes": os.environ.get("SAFEPATH_ROUTE_THROTTLE_RATE", "20/minute"),
+    },
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "safe": {
+            "()": "safepath_backend.logging.SafeLogFormatter",
+            "format": "{levelname} {name} {message}",
+            "style": "{",
+        }
+    },
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "formatter": "safe",
+            "stream": "ext://sys.stdout",
+        },
+        "stderr": {
+            "class": "logging.StreamHandler",
+            "formatter": "safe",
+            "stream": "ext://sys.stderr",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["stdout"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["stderr"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "safepath": {
+            "handlers": ["stdout"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "safepath.errors": {
+            "handlers": ["stderr"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 
