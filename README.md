@@ -220,7 +220,7 @@ cost = distance_meters + beta * risk * distance_meters
 - Modified A* with `beta=8.0` produces the safety-weighted candidate.
 - Modified A* with `beta=2.0` produces the balanced candidate.
 
-The candidate pool also applies temporary penalties to edges used by base paths. Exact paths are deduplicated. Interior-edge overlap is measured after trimming common start and end edges, and an alternative is retained only when its overlap ratio is at most `0.75` relative to selected routes.
+The connected multi-source Dijkstra result is reused as the shortest route. The candidate pool also applies temporary penalties to edges used by base paths, running each distinct penalty set once. Exact paths are deduplicated. Interior-edge overlap is measured after trimming common start and end edges, and an alternative is retained only when its overlap ratio is at most `0.75` relative to selected routes.
 
 The response can contain fewer than four routes when the loaded graph does not support that many connected, distinct paths. It never repeats a path or invents route geometry.
 
@@ -290,7 +290,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 155 Django tests passed
+- 164 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed

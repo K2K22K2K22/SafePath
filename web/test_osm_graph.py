@@ -9,10 +9,12 @@ from Model.utils.osm_graph import (
     RoadDataUnavailable,
     _build_graph_from_xml,
     _fetch_osm_xml,
+    _nearest_candidates,
     _overpass_query,
     _prepared_hostname,
     _validated_osm_url,
 )
+from Model.utils.road_graph import RoadGraph
 
 OSM_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6" generator="test">
@@ -126,6 +128,21 @@ class OSMGraphTests(SimpleTestCase):
         self.assertGreater(forward.distance_meters, 90)
         self.assertEqual(forward.metadata["name"], "Test Road")
         self.assertEqual(len(forward.geometry), 2)
+
+    @override_settings(
+        SAFEPATH_MAX_SNAP_DISTANCE_METERS=120,
+        SAFEPATH_SNAP_CANDIDATE_LIMIT=2,
+    )
+    def test_endpoint_snapping_uses_nearest_nodes_within_limit(self):
+        graph = RoadGraph()
+        graph.add_node("near", 0.0, 0.0)
+        graph.add_node("also-near", 0.0, 0.001)
+        graph.add_node("far", 0.0, 0.01)
+
+        candidates = _nearest_candidates(graph, 0.0, 0.0)
+
+        self.assertEqual([node_id for node_id, _ in candidates], ["near", "also-near"])
+        self.assertEqual(_nearest_candidates(graph, 1.0, 1.0), ())
 
     def test_excludes_non_drivable_ways(self):
         graph = _build_graph_from_xml(OSM_FIXTURE)

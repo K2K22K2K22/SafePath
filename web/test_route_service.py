@@ -6,8 +6,13 @@ from django.test import SimpleTestCase
 
 from Model.utils.risk_scoring import EdgeRiskScores
 from Model.utils.road_graph import RoadGraph
-from Model.utils.route_service import generate_route_options, shared_interior_edge_ratio
-from Model.utils.routing import PathResult
+from Model.utils.route_service import (
+    _candidate_pool,
+    calculate_route_options,
+    generate_route_options,
+    shared_interior_edge_ratio,
+)
+from Model.utils.routing import PathResult, dijkstra, modified_a_star
 
 
 def build_three_route_graph():
@@ -176,6 +181,93 @@ class RouteServiceTests(SimpleTestCase):
 
         self.assertEqual(len(options), 1)
         self.assertEqual(options[0].distance_meters, 112.0)
+
+    def test_reuses_supplied_shortest_path_without_repeating_plain_dijkstra(self):
+        shortest = dijkstra(self.graph, "A", "D")
+        calls = []
+
+        def tracked_dijkstra(*args, **kwargs):
+            if len(args) > 5:
+                calls.append(args[5])
+            else:
+                calls.append(kwargs.get("edge_penalties"))
+            return dijkstra(*args, **kwargs)
+
+        with patch(
+            "Model.utils.route_service.dijkstra",
+            side_effect=tracked_dijkstra,
+        ):
+            options = generate_route_options(
+                self.graph,
+                "A",
+                "D",
+                self.risks,
+                shortest_path=shortest,
+            )
+
+        self.assertEqual(
+            next(option for option in options if "shortest" in option.labels).edge_ids,
+            shortest.edge_ids,
+        )
+        self.assertTrue(calls)
+        self.assertTrue(all(call is not None for call in calls))
+
+    def test_calculation_passes_connected_shortest_path_to_route_generation(self):
+        shortest = dijkstra(self.graph, "A", "D")
+        road_result = SimpleNamespace(
+            graph=self.graph,
+            start_candidates=(("A", 0.0),),
+            end_candidates=(("D", 0.0),),
+        )
+
+        with (
+            patch(
+                "Model.utils.route_service.load_road_graph",
+                return_value=road_result,
+            ),
+            patch(
+                "Model.utils.route_service._risk_scores_for_graph",
+                return_value=self.risks,
+            ),
+            patch(
+                "Model.utils.route_service.dijkstra_to_any",
+                return_value=shortest,
+            ),
+            patch(
+                "Model.utils.route_service.generate_route_options",
+                return_value=(),
+            ) as generate,
+        ):
+            calculate_route_options(0.0, 0.0, 0.0018, 0.0)
+
+        self.assertIs(generate.call_args.kwargs["shortest_path"], shortest)
+
+    def test_duplicate_base_paths_do_not_repeat_penalty_searches(self):
+        shortest = dijkstra(self.graph, "A", "D")
+
+        with (
+            patch(
+                "Model.utils.route_service.dijkstra",
+                wraps=dijkstra,
+            ) as dijkstra_search,
+            patch(
+                "Model.utils.route_service.modified_a_star",
+                wraps=modified_a_star,
+            ) as astar_search,
+        ):
+            _candidate_pool(
+                self.graph,
+                "A",
+                "D",
+                self.risks,
+                shortest,
+                shortest,
+                shortest,
+                1000,
+            )
+
+        self.assertEqual(dijkstra_search.call_count, 1)
+        self.assertEqual(astar_search.call_count, 2)
 
     def test_shared_interior_ratio_ignores_common_start_and_end_edges(self):
         ratio = shared_interior_edge_ratio(

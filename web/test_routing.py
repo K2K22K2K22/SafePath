@@ -6,6 +6,8 @@ from django.test import SimpleTestCase
 from Model.utils.road_graph import RoadGraph
 from Model.utils.routing import (
     SearchLimitExceeded,
+    _distance_heuristic,
+    _edge_cost,
     dijkstra,
     dijkstra_to_any,
     modified_a_star,
@@ -99,6 +101,55 @@ class ModifiedAStarTests(SimpleTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.edge_ids, ("A-C", "C-D"))
         self.assertEqual(result.path_cost, 400.0)
+
+    def test_modified_a_star_matches_dijkstra_for_same_objective(self):
+        graph = build_test_graph()
+        risks = {
+            "A-B": 0.4,
+            "B-D": 0.4,
+            "A-C": 0.0,
+            "C-D": 0.0,
+        }
+
+        astar = modified_a_star(graph, "A", "D", risks, beta=2.0)
+        dijkstra_result = dijkstra(graph, "A", "D", risks, beta=2.0)
+
+        self.assertIsNotNone(astar)
+        self.assertIsNotNone(dijkstra_result)
+        self.assertAlmostEqual(astar.path_cost, dijkstra_result.path_cost)
+
+    def test_distance_heuristic_does_not_overestimate_remaining_distance(self):
+        graph = build_test_graph()
+        goal = graph.nodes["D"]
+
+        for node_id, node in graph.nodes.items():
+            remaining = dijkstra(graph, node_id, "D")
+            self.assertIsNotNone(remaining)
+            self.assertLessEqual(
+                _distance_heuristic(node, goal),
+                remaining.distance_meters,
+            )
+
+    def test_edge_cost_is_non_negative_for_valid_inputs(self):
+        edge = build_test_graph().edges["A-B"]
+
+        for risk, beta in ((0.0, 0.0), (0.4, 2.0), (1.0, 8.0)):
+            with self.subTest(risk=risk, beta=beta):
+                self.assertGreaterEqual(_edge_cost(edge, risk, beta, 0.0), 0.0)
+
+    def test_distance_is_sum_of_actual_edge_lengths(self):
+        graph = RoadGraph()
+        graph.add_node("A", 0.0, 0.0)
+        graph.add_node("B", 0.0, 0.001)
+        graph.add_node("C", 0.0, 0.002)
+        graph.add_edge("A-B", "A", "B", 120.0, ((0.0, 0.0), (0.0, 0.001)))
+        graph.add_edge("B-C", "B", "C", 150.0, ((0.0, 0.001), (0.0, 0.002)))
+
+        result = dijkstra(graph, "A", "C")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.distance_meters, 270.0)
+        self.assertEqual(result.path_cost, 270.0)
 
     def test_returns_none_for_disconnected_graph(self):
         self.graph.add_node("X", 1.0, 1.0)

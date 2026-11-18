@@ -67,7 +67,7 @@ flowchart TD
     F --> G[Multi-source Dijkstra reachability check]
     G --> H{Connected route exists?}
     H -->|No| E4[404 Route Not Found]
-    H -->|Yes| I[Shortest Dijkstra path]
+    H -->|Yes| I[Reuse connected shortest path]
     I --> J[Modified A* with beta 8]
     J --> K[Modified A* with beta 2]
     K --> L[Add penalized alternative candidates]
@@ -109,7 +109,7 @@ The `RoadGraph` rejects an edge whose distance is less than 99% of the endpoint 
 
 ### 4.3 Endpoint snapping
 
-The loader selects nearby graph nodes within the configured snap distance. It first tries the normal padding and then a wider padding if needed. A multi-source Dijkstra search confirms that at least one snapped start candidate can reach a snapped destination candidate.
+The loader selects nearby graph nodes within the configured snap distance. It first tries the normal padding and then a wider padding if needed. A multi-source Dijkstra search confirms that at least one snapped start candidate can reach a snapped destination candidate. Its connected minimum-distance path is reused as the shortest route instead of repeating a plain Dijkstra search.
 
 ### 4.4 Search objectives
 
@@ -139,7 +139,7 @@ The candidate pool starts with three objective paths:
 | Safety weighted | Modified A* | `8.0` |
 | Balanced | Modified A* | `2.0` |
 
-For each base path, temporary edge penalties discourage reuse of that path. Penalized Dijkstra, balanced A*, and safety-weighted A* searches add candidates. Exact edge-sequence duplicates are removed.
+For each distinct base edge set, temporary edge penalties discourage reuse of that path. Penalized Dijkstra, balanced A*, and safety-weighted A* searches add candidates. Base paths with the same edge set reuse one penalty-search group. Exact edge-sequence duplicates are removed.
 
 Interior-edge overlap is calculated after removing common start and end edges. An alternative is distinct only when its overlap ratio against every selected route is at most `0.75`. The service returns up to four routes. Fewer routes are returned when connected distinct paths do not exist.
 

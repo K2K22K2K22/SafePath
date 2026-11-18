@@ -76,6 +76,29 @@ Repository history describes `data/delhi_crime_data.csv` as fictitious data for 
 
 Coverage no longer uses an incident-coordinate bounding rectangle. The scorer unions each edge's intersections with 200 metre record-proximity zones, stores actual covered length, and requires every route edge to be fully covered before reporting a safety estimate or assigning `safest`. Partial and uncovered routes remain unrated, and the API returns `safe_path=null` when no supported safest route exists. The Phase 6 local matrix passed 155 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build passed.
 
+## Phase 7 routing correctness and performance
+
+The routing audit confirmed that Dijkstra minimizes actual road-edge distance, modified A* returns the minimum configured objective cost, its 99% geodesic heuristic remains admissible, valid edge costs remain non-negative, path distances sum actual edge lengths, risk is length-weighted, partial coverage remains unknown, `safest` is limited to fully covered generated candidates, `shortest` uses graph distance, `balanced` uses `beta=2.0`, alternatives satisfy the distinctness threshold, disconnected graphs return no path, endpoint snapping respects its distance limit, search limits produce controlled errors, and upstream failures do not crash the API. The UI explanation remains `Lowest modeled risk among the generated, eligible routes.`
+
+Two redundant search costs were removed without changing either search algorithm or the alternative strategy. The connected multi-source Dijkstra result is reused as the shortest route, and base paths with the same edge set run one penalty-search group. Existing request, graph, response-byte, and node-exploration safeguards remain unchanged.
+
+A deterministic synthetic benchmark used OSM-shaped short and medium grids. The short graph had 100 nodes and 360 edges; the medium graph had 900 nodes and 3,480 edges. The provider request was mocked, so these figures do not claim live provider latency.
+
+| Measurement | Short | Medium |
+| --- | ---: | ---: |
+| Mocked OSM load and parse | 3.9 ms | 40.1 ms |
+| Graph construction | 3.2 ms | 34.3 ms |
+| Synthetic proximity scoring | 139.9 ms | 1,426.5 ms |
+| Dijkstra | 0.18 ms | 1.85 ms |
+| Modified A* | 0.25 ms | 2.99 ms |
+| Cold API response | 65.5 ms | 484.1 ms |
+| Warm cached-risk API response | 2.4 ms | 18.1 ms |
+| Python peak allocation during API request | 4.0 MiB | 0.5 MiB |
+
+Against commit `7ac17ff` in the same harness, route-option generation fell from 3.0 ms to 2.3 ms for the short graph and from 32.1 ms to 24.0 ms for the medium graph. Warm API responses fell from 4.2 ms to 2.4 ms and from 38.4 ms to 18.1 ms respectively. Cold API responses fell from 74.0 ms to 65.5 ms and from 571.9 ms to 484.1 ms. These are local synthetic measurements, not service-level objectives. One bounded public Overpass development request failed with `RoadDataUnavailable` in 603 ms, so live provider timing remains unverified.
+
+The Phase 7 local matrix passed 164 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime passed.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files

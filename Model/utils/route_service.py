@@ -83,12 +83,17 @@ def calculate_route_options(start_lat, start_lon, end_lat, end_lon):
         reachable_path.node_ids[0],
         reachable_path.node_ids[-1],
         risks,
+        shortest_path=reachable_path,
     )
 
 
-def generate_route_options(graph, start, end, risk_by_edge):
+def generate_route_options(graph, start, end, risk_by_edge, shortest_path=None):
     max_nodes = settings.SAFEPATH_MAX_NODES_EXPLORED
-    shortest = dijkstra(graph, start, end, max_nodes_explored=max_nodes)
+    shortest = (
+        shortest_path
+        if shortest_path is not None
+        else dijkstra(graph, start, end, max_nodes_explored=max_nodes)
+    )
     if shortest is None:
         raise RouteNotFound("No route exists between the selected road nodes.")
 
@@ -206,13 +211,17 @@ def _candidate_pool(
         if candidate.path is not None:
             candidates.append(candidate)
 
-    base_paths = [
-        candidate.path for candidate in candidates if candidate.path is not None
-    ]
-    for base_path in base_paths:
+    base_edge_sets = list(
+        dict.fromkeys(
+            frozenset(candidate.path.edge_ids)
+            for candidate in candidates
+            if candidate.path is not None
+        )
+    )
+    for edge_ids in base_edge_sets:
         penalties = {
             edge_id: graph.edges[edge_id].distance_meters * EDGE_PENALTY_MULTIPLIER
-            for edge_id in base_path.edge_ids
+            for edge_id in edge_ids
         }
         candidates.extend(
             candidate
