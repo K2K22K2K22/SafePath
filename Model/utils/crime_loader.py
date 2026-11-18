@@ -42,7 +42,7 @@ def load_source_metadata() -> dict[str, Any]:
             )
         ):
             raise ValueError("Source metadata failed validation.")
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):
         return dict(_FALLBACK_METADATA)
     return metadata
 

@@ -56,7 +56,10 @@ class IncidentMetadataTests(SimpleTestCase):
                 metadata_path.write_text("[]", encoding="utf-8")
                 wrong_shape = load_source_metadata()
 
-        for metadata in (missing, malformed, wrong_shape):
+                metadata_path.write_text("[" * 10000 + "]" * 10000, encoding="utf-8")
+                deeply_nested = load_source_metadata()
+
+        for metadata in (missing, malformed, wrong_shape, deeply_nested):
             self.assertFalse(metadata["verified"])
             self.assertEqual(
                 metadata["verification_status"],
