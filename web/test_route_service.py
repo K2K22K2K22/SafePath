@@ -1,8 +1,13 @@
+from itertools import combinations
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
 from Model.utils.risk_scoring import EdgeRiskScores
 from Model.utils.road_graph import RoadGraph
 from Model.utils.route_service import generate_route_options, shared_interior_edge_ratio
+from Model.utils.routing import PathResult
 
 
 def build_three_route_graph():
@@ -69,6 +74,81 @@ class RouteServiceTests(SimpleTestCase):
                 for edge_id in shortest.edge_ids
             ),
         )
+
+    def test_alternatives_are_distinct_from_every_selected_route(self):
+        def path(edge_ids, distance):
+            return PathResult(
+                node_ids=("A", "D"),
+                edge_ids=tuple(edge_ids),
+                path_cost=float(distance),
+                distance_meters=float(distance),
+                nodes_explored=1,
+                computation_time_ms=0.0,
+            )
+
+        role_one = path(("A-R1", "R1-D"), 200)
+        role_two = path(("A-R2", "R2-D"), 200)
+        alternative_one = path(
+            ("A-P", "P-1", "P-2", "P-3", "P-4", "Z-D"),
+            600,
+        )
+        alternative_two = path(
+            ("A-P", "P-1", "P-2", "P-3", "P-4", "P-5", "Z-D"),
+            700,
+        )
+        edge_ids = {
+            edge_id
+            for candidate in [role_one, role_two, alternative_one, alternative_two]
+            for edge_id in candidate.edge_ids
+        }
+        graph = SimpleNamespace(
+            edges={
+                edge_id: SimpleNamespace(
+                    distance_meters=100.0,
+                    travel_time_seconds=10.0,
+                    geometry=((0.0, 0.0), (0.0, 0.001)),
+                )
+                for edge_id in edge_ids
+            }
+        )
+        candidates = [
+            SimpleNamespace(path=role_one, algorithm="dijkstra", beta=0.0),
+            SimpleNamespace(path=role_two, algorithm="modified_astar", beta=8.0),
+            SimpleNamespace(path=alternative_one, algorithm="modified_astar", beta=8.0),
+            SimpleNamespace(path=alternative_two, algorithm="modified_astar", beta=8.0),
+        ]
+        risks = {
+            "A-R1": 0.8,
+            "R1-D": 0.8,
+            "A-R2": 0.1,
+            "R2-D": 0.1,
+            "A-P": 0.9,
+        }
+
+        with (
+            patch(
+                "Model.utils.route_service.dijkstra",
+                return_value=role_one,
+            ),
+            patch(
+                "Model.utils.route_service.modified_a_star",
+                side_effect=[role_two, role_two],
+            ),
+            patch(
+                "Model.utils.route_service._candidate_pool",
+                return_value=candidates,
+            ),
+        ):
+            options = generate_route_options(graph, "A", "D", risks)
+
+        alternatives = [option for option in options if "alternative" in option.labels]
+        self.assertEqual(len(alternatives), 1)
+        self.assertEqual(alternatives[0].edge_ids, alternative_one.edge_ids)
+        for first, second in combinations(options, 2):
+            self.assertLessEqual(
+                shared_interior_edge_ratio(first.edge_ids, second.edge_ids),
+                0.75,
+            )
 
     def test_combines_objective_labels_when_same_route_wins_both(self):
         options = generate_route_options(self.graph, "A", "D", self.risks)

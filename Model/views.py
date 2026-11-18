@@ -10,6 +10,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from .utils.osm_graph import RoadDataUnavailable
 from .utils.risk_scoring import INCIDENT_RADIUS_METERS, RiskScorer
 from .utils.route_service import RouteNotFound, calculate_route_options
+from .utils.routing import SearchLimitExceeded
 
 
 class RoutesRateThrottle(ScopedRateThrottle):
@@ -156,6 +157,11 @@ def routes(request):
     except RouteNotFound:
         return Response(
             {"detail": "No route was found for these coordinates."}, status=404
+        )
+    except SearchLimitExceeded:
+        return Response(
+            {"detail": "Route search temporarily exceeded its work limit."},
+            status=503,
         )
     except RoadDataUnavailable:
         return Response(

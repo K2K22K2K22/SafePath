@@ -22,7 +22,7 @@ const routePayload = {
       risk_level: "low",
       risk_data_available: true,
       incident_coverage_ratio: 1,
-      explanation: "Lowest observed risk among fully covered generated routes.",
+      explanation: "Lowest computed risk among fully covered generated routes.",
     },
     {
       id: "route-2",

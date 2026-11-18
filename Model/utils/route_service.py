@@ -153,6 +153,8 @@ def generate_route_options(graph, start, end, risk_by_edge):
     for candidate in alternatives:
         if len(selected) >= 4:
             break
+        if not _is_distinct(candidate.path.edge_ids, selected.keys()):
+            continue
         key = candidate.path.edge_ids
         selected[key] = candidate
         labels[key] = ["alternative"]
@@ -295,10 +297,10 @@ def _build_route_option(
     path = candidate.path
     distance = path.distance_meters
     coverage_ratio, risk_data_available = _route_coverage(path, graph, risks)
-    observed_risk = _route_risk(path, graph, risks)
-    risk_score = observed_risk if risk_data_available else None
-    safety_score = round((1 - observed_risk) * 100) if risk_data_available else None
-    risk_level = _risk_level(observed_risk) if risk_data_available else "unknown"
+    route_risk = _route_risk(path, graph, risks)
+    risk_score = route_risk if risk_data_available else None
+    safety_score = round((1 - route_risk) * 100) if risk_data_available else None
+    risk_level = _risk_level(route_risk) if risk_data_available else "unknown"
     duration = sum(
         graph.edges[edge_id].travel_time_seconds or 0.0 for edge_id in path.edge_ids
     )
@@ -422,7 +424,7 @@ def _risk_level(risk_score):
 
 def _route_explanation(labels):
     explanations = {
-        "safest": "Lowest observed risk among fully covered generated routes.",
+        "safest": "Lowest computed risk among fully covered generated routes.",
         "shortest": "Minimum road-edge distance in the loaded graph.",
         "balanced": "Balanced distance and risk objective.",
         "alternative": "Distinct path generated with temporary edge penalties.",

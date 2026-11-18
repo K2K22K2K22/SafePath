@@ -6,6 +6,7 @@ from django.test import SimpleTestCase
 
 from Model.utils.osm_graph import RoadDataUnavailable
 from Model.utils.route_service import RouteNotFound, RouteOption
+from Model.utils.routing import SearchLimitExceeded
 from Model.views import RoutesRateThrottle
 
 
@@ -83,6 +84,24 @@ class RoutesApiTests(SimpleTestCase):
         with patch(
             "Model.views.calculate_route_options",
             side_effect=RoadDataUnavailable("upstream failed"),
+        ):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_returns_service_unavailable_when_search_limit_is_exceeded(self):
+        with patch(
+            "Model.views.calculate_route_options",
+            side_effect=SearchLimitExceeded("search limit exceeded"),
         ):
             response = self.client.get(
                 "/api/routes/",
