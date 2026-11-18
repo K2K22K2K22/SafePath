@@ -147,10 +147,10 @@ The custom routing engine will operate on the resulting directed, weighted graph
 
 - Nodes are OSM road vertices.
 - Edges are directed OSM road segments.
-- Edge length is the geometry length in metres.
-- Edge geometry retains all available shape points.
+- Edge length is the geodesic distance between consecutive endpoints in metres.
+- Edge geometry stores the segment between consecutive OSM nodes.
 - Edge metadata retains road class, name, one-way information, and available travel-time data.
-- Origin and destination are snapped to the nearest routable nodes, with snap distances returned by the API.
+- Origin and destination are snapped to nearby routable nodes within configured limits; snap distances are not returned by the API.
 - Graphs are cached in process by normalised bounding box and time window.
 - Request timeouts and upstream errors produce explicit 4xx or 503 responses.
 
@@ -162,7 +162,7 @@ Risk will be deterministic and based only on the bundled incident records.
 
 For each road edge and incident:
 
-1. Measure the shortest distance from the incident coordinate to the edge polyline in metres.
+1. Measure the shortest distance from the incident coordinate to the stored edge segment in metres.
 2. Apply a documented incident influence radius of 200 metres.
 3. Weight the incident by normalised severity, from 1 to 5, mapped to 0.2 to 1.0.
 4. Apply distance decay within the influence radius.
@@ -171,7 +171,7 @@ For each road edge and incident:
 
 Route risk will be the length-weighted mean edge risk. Safety score will be the inverse risk score on a 0 to 100 scale. Risk level thresholds and the exact formula will be documented with the implementation.
 
-A route with no nearby incident records will include a coverage flag. The interface will present that route as having no local incident coverage instead of claiming that it is proven safe.
+A route that is not fully covered by the incident dataset will report unknown safety. The interface will present that route as unrated instead of claiming that it is proven safe.
 
 ### 4.4 Dijkstra and modified A* objectives
 
