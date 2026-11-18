@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from urllib.parse import urlparse
 
+import idna
 import requests
 from django.conf import settings
 
@@ -50,6 +51,7 @@ RESTRICTED_ACCESS_VALUES = {
 }
 PUBLIC_OVERPASS_HOSTS = frozenset(
     {
+        "api.spainip.es",
         "ethiopia.overpass.openplaceguide.org",
         "gall.openstreetmap.de",
         "lambert.openstreetmap.de",
@@ -355,11 +357,15 @@ def _build_graph_from_xml(osm_xml):
     coordinates = {}
     node_tags = {}
     ways: dict[str, tuple[str, dict[str, str], list[str]]] = {}
+    element_count = 0
 
     for document in documents:
-        document_coordinates, document_node_tags, document_ways = _parse_osm_document(
-            document
-        )
+        (
+            document_coordinates,
+            document_node_tags,
+            document_ways,
+            element_count,
+        ) = _parse_osm_document(document, element_count)
         coordinates.update(document_coordinates)
         node_tags.update(document_node_tags)
         for way_id, way in document_ways.items():
@@ -452,7 +458,7 @@ def _validate_utf8_document(document):
         )
 
 
-def _parse_osm_document(document):
+def _parse_osm_document(document, element_count=0):
     if not isinstance(document, bytes):
         raise RoadDataUnavailable("Road data document must be bytes.")
     _validate_utf8_document(document)
@@ -461,7 +467,6 @@ def _parse_osm_document(document):
     node_tags = {}
     ways = {}
     depth = 0
-    element_count = 0
     root_seen = False
 
     try:
@@ -498,12 +503,14 @@ def _parse_osm_document(document):
                     way_id, tags, references = way
                     ways[way_id] = (way_id, tags, references)
                 element.clear()
+            elif depth == 1:
+                element.clear()
     except ET.ParseError as error:
         raise RoadDataUnavailable("Road data document was not valid XML.") from error
 
     if not root_seen:
         raise RoadDataUnavailable("Road data document was empty.")
-    return coordinates, node_tags, ways
+    return coordinates, node_tags, ways, element_count
 
 
 def _parse_node(element):
@@ -701,20 +708,35 @@ def _normalized_hostname(hostname):
         return ""
     host = hostname.strip().rstrip(".").lower()
     try:
-        return host.encode("idna").decode("ascii")
-    except UnicodeError:
+        labels = []
+        for label in host.split("."):
+            if label.isascii():
+                labels.append(label)
+            else:
+                labels.append(
+                    idna.encode(label, strict=True, std3_rules=True).decode("ascii")
+                )
+        return ".".join(labels)
+    except (idna.IDNAError, UnicodeError):
         return ""
+
+
+def _prepared_hostname(url):
+    try:
+        prepared = requests.Request(method="GET", url=url).prepare()
+    except (requests.RequestException, UnicodeError, ValueError):
+        return ""
+    return _normalized_hostname(urlparse(prepared.url).hostname)
 
 
 def _validated_osm_url(require_private=None):
     url = settings.SAFEPATH_OSM_API_URL
     try:
         parsed = urlparse(url)
-        hostname = parsed.hostname
         port = parsed.port
     except ValueError as error:
         raise RoadDataUnavailable("Road data provider URL is invalid.") from error
-    normalized_hostname = _normalized_hostname(hostname)
+    normalized_hostname = _prepared_hostname(url)
     allowed_hosts = {
         _normalized_hostname(host) for host in settings.SAFEPATH_OSM_API_ALLOWED_HOSTS
     }

@@ -90,7 +90,7 @@ SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
 
 The public `overpass-api.de` endpoint is a development fallback only. It has no availability guarantee and must not be used as the production road-data backend. Production requests require the provider host to appear in the explicit production approval list and reject known public Overpass hosts. `scripts/check_production.py` enforces the same requirement. The URL must use HTTPS, the host must appear in the exact allowlist, redirects are rejected, and URL credentials and non-standard ports are rejected. Listing a production host asserts that the operator has a paid or self-hosted agreement for it.
 
-Each request uses fixed bounded Overpass QL. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, XML elements, graph edges, and aggregate time. Provider requests are serialized within one process, and graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
+Each request uses fixed bounded Overpass QL. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, aggregate XML elements, graph edges, and the acquisition deadline checked between response reads. Provider requests are serialized within one process, and graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
 
 ## Migration modes
 

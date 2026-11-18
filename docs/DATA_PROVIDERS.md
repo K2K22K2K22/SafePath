@@ -16,7 +16,7 @@ SAFEPATH_OSM_API_ALLOWED_HOSTS='road-provider.example'
 SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
 ```
 
-Production mode requires the configured provider host to appear in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`. Known public Overpass hosts remain rejected even when an operator lists one. Host comparisons are canonicalized so case, IDNA form, and a trailing DNS dot cannot bypass either list. The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command:
+Production mode requires the configured provider host to appear in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`. Known public Overpass hosts remain rejected even when an operator lists one. The denylist was reviewed against the OSM Wiki public-instance list on 18 November 2026 and must be reviewed when that list changes. Host comparisons are canonicalized so case, IDNA form, and a trailing DNS dot cannot bypass either list. The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command:
 
 ```bash
 DJANGO_DEBUG=False \
@@ -42,7 +42,7 @@ The loader preserves these limits for every graph load:
 - Maximum split depth of 3
 - Maximum 25,000,000 downloaded bytes per graph load
 - Maximum 30 second acquisition deadline checked between response reads
-- Maximum XML depth of 8 and 500,000 XML elements
+- Maximum XML depth of 8 per document and 500,000 XML elements in aggregate across split documents
 - Maximum 250,000 graph edges
 
 Provider requests are serialized within one application process. Each Gunicorn worker has an independent lock, so provider capacity must cover the configured worker count. The process-local graph cache retains up to 8 graphs for 24 hours by default. Multiple application instances require provider-side capacity or shared coordination so their combined requests remain within the provider agreement. The application does not enforce a daily quota because that total cannot be coordinated reliably within one process.

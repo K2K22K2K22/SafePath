@@ -10,6 +10,7 @@ from Model.utils.osm_graph import (
     _build_graph_from_xml,
     _fetch_osm_xml,
     _overpass_query,
+    _prepared_hostname,
     _validated_osm_url,
 )
 
@@ -216,6 +217,16 @@ class OSMGraphTests(SimpleTestCase):
                 with self.assertRaises(RoadDataUnavailable):
                     _build_graph_from_xml(document.encode(encoding))
 
+    @override_settings(SAFEPATH_OSM_API_MAX_XML_ELEMENTS=3)
+    def test_enforces_aggregate_xml_element_limit_across_documents(self):
+        document = b"""<osm version="0.6">
+  <node id="1" lat="28.4750" lon="77.4770" />
+</osm>
+"""
+
+        with self.assertRaisesRegex(RoadDataUnavailable, "element limit"):
+            _build_graph_from_xml([document, document])
+
     def test_rejects_malformed_drivable_way(self):
         document = b"""<?xml version="1.0"?>
 <osm version="0.6">
@@ -261,6 +272,7 @@ class OSMGraphTests(SimpleTestCase):
 
     def test_rejects_public_provider_in_production(self):
         for host in (
+            "api.spainip.es",
             "maps.mail.ru",
             "overpass-api.de",
             "ovp.dresel.systems",
@@ -331,6 +343,36 @@ class OSMGraphTests(SimpleTestCase):
             self.assertEqual(
                 _validated_osm_url(),
                 "https://xn--mnchen-3ya.example/api/interpreter",
+            )
+
+        with override_settings(
+            SAFEPATH_PRODUCTION_MODE=True,
+            SAFEPATH_OSM_API_URL="https://ς.gr/api/interpreter",
+            SAFEPATH_OSM_API_ALLOWED_HOSTS=("xn--3xa.gr",),
+            SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS=("ς.gr",),
+        ):
+            self.assertEqual(
+                _validated_osm_url(),
+                "https://ς.gr/api/interpreter",
+            )
+            self.assertEqual(
+                _prepared_hostname("https://ς.gr/api/interpreter"),
+                "xn--3xa.gr",
+            )
+
+        with override_settings(
+            SAFEPATH_PRODUCTION_MODE=True,
+            SAFEPATH_OSM_API_URL="https://ß.gr/api/interpreter",
+            SAFEPATH_OSM_API_ALLOWED_HOSTS=("xn--zca.gr",),
+            SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS=("ß.gr",),
+        ):
+            self.assertEqual(
+                _validated_osm_url(),
+                "https://ß.gr/api/interpreter",
+            )
+            self.assertEqual(
+                _prepared_hostname("https://ß.gr/api/interpreter"),
+                "xn--zca.gr",
             )
 
     def test_builds_bounded_overpass_query(self):
