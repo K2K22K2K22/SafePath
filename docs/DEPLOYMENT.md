@@ -29,6 +29,18 @@ python manage.py collectstatic --noinput --clear --ignore "web/css/src/*"
 
 The secret file must be readable only by the release process, so shell history records the file path rather than the secret value. Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
 
+## Database
+
+Set `DATABASE_URL` to a PostgreSQL URL for deployed environments:
+
+```bash
+DATABASE_URL='postgresql://safepath:url-encoded-password@db.example.com:5432/safepath?sslmode=require'
+```
+
+The `postgres://` and `postgresql://` schemes are supported. URL query options are passed to PostgreSQL, including `sslmode` and `sslrootcert`. Certificate paths must exist in the runtime image or mounted secret store. Percent-encode reserved characters in credentials. When `DATABASE_URL` is unset, SAFE PATH uses SQLite at `SAFEPATH_DATABASE_PATH`.
+
+PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Run migrations against the same database before starting the release.
+
 ## Migration modes
 
 Choose one mode for each deployment:

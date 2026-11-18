@@ -291,6 +291,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 | Routing search | Finite edge values, non-negative beta, endpoint validation, bounded node exploration |
 | Browser map | Leaflet and Leaflet.heat pinned and vendored with licenses |
 | Container | `/health/` endpoint and Docker health check |
+| Django to database | PostgreSQL URL validation, SSL options, persistent connection health checks, or local SQLite |
 
 ## 10. Caching and resource bounds
 
@@ -322,7 +323,7 @@ flowchart TB
     Django --> Static[WhiteNoise static assets]
     Django -->|HTTPS road and location data| External[OSM and Nominatim]
     Django --> CSV[Bundled incident CSV]
-    Container --> Database[(safepath_data volume)]
+    Container --> Database[(PostgreSQL or SQLite storage)]
 
     subgraph CI[GitHub Actions]
         Quality[Ruff, Mypy, ESLint, Django, Tailwind]
@@ -337,7 +338,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container. SQLite uses the `safepath_data` named volume rather than the host checkout. A production deployment still needs an external persistent database, TLS termination, provider credentials, and an appropriate secret-management process.
+The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container. `DATABASE_URL` selects PostgreSQL for deployed environments; SQLite uses the `safepath_data` named volume rather than the host checkout. A production deployment still needs TLS termination, provider credentials, and an appropriate secret-management process.
 
 ## 12. Test boundaries
 

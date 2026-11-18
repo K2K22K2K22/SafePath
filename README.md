@@ -28,7 +28,7 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 | Risk model | Bundled CSV incidents scored against stored road-edge segments |
 | Map | Leaflet 1.9.4 and Leaflet.heat 0.2.0, both vendored locally |
 | Styling | Tailwind CSS 4.1.18 with committed generated CSS |
-| Django storage | SQLite for framework features such as sessions and admin |
+| Django storage | PostgreSQL via `DATABASE_URL`, with SQLite as the local fallback |
 | CI | GitHub Actions on Python 3.13 and Node.js 22 |
 
 SQLite does not store route or incident results. Routing uses the OSM graph and bundled CSV directly. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system, route-flow, risk-flow, frontend-state, and deployment diagrams.
@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes `PORT` (default `8000`), runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
+The container exposes `PORT` (default `8000`), runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -95,6 +95,8 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
 | `DJANGO_SECRET_KEY` | unset | Required when debug mode is off |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Accepted deployment hosts; loopback hosts are always retained for health checks |
+| `DATABASE_URL` | unset | PostgreSQL connection URL; unset uses local SQLite |
+| `SAFEPATH_DATABASE_CONN_MAX_AGE` | `60` | PostgreSQL connection lifetime in seconds |
 | `PORT` | `8000` | Container port used by Gunicorn |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
 | `GUNICORN_TIMEOUT` | `60` | Gunicorn request timeout in seconds |
@@ -271,7 +273,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 67 Django tests passed
+- 73 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed for 32 source files

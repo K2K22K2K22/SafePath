@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
 from scripts.verify_static_assets import fetch
@@ -73,6 +74,91 @@ class ProductionStaticAssetSettingsTests(SimpleTestCase):
             config["STORAGES"]["staticfiles"]["BACKEND"],
             "whitenoise.storage.CompressedManifestStaticFilesStorage",
         )
+
+
+class DatabaseSettingsTests(SimpleTestCase):
+    def load_settings(self, environment):
+        settings_path = Path(settings.BASE_DIR) / "safepath_backend" / "settings.py"
+        with patch.dict(os.environ, environment, clear=True):
+            return runpy.run_path(str(settings_path))
+
+    def test_postgres_url_preserves_ssl_options_and_connection_policy(self):
+        config = self.load_settings(
+            {
+                "DATABASE_URL": (
+                    "postgresql://user:p%40ss@db.example.com:5432/safepath"
+                    "?sslmode=verify-full&sslrootcert=/etc/ssl/ca.pem"
+                ),
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": "database-settings-test-secret-key-with-enough-length-92841",
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_DATABASE_CONN_MAX_AGE": "90",
+            }
+        )
+
+        database = config["DATABASES"]["default"]
+        self.assertEqual(database["ENGINE"], "django.db.backends.postgresql")
+        self.assertEqual(database["NAME"], "safepath")
+        self.assertEqual(database["USER"], "user")
+        self.assertEqual(database["PASSWORD"], "p@ss")
+        self.assertEqual(database["HOST"], "db.example.com")
+        self.assertEqual(database["PORT"], 5432)
+        self.assertEqual(
+            database["OPTIONS"],
+            {
+                "sslmode": "verify-full",
+                "sslrootcert": "/etc/ssl/ca.pem",
+            },
+        )
+        self.assertEqual(database["CONN_MAX_AGE"], 90)
+        self.assertTrue(database["CONN_HEALTH_CHECKS"])
+
+    def test_sqlite_remains_the_local_fallback(self):
+        config = self.load_settings(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": "database-settings-test-secret-key-with-enough-length-92841",
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_DATABASE_PATH": "/tmp/safepath-test.sqlite3",
+            }
+        )
+
+        database = config["DATABASES"]["default"]
+        self.assertEqual(database["ENGINE"], "django.db.backends.sqlite3")
+        self.assertEqual(database["NAME"], "/tmp/safepath-test.sqlite3")
+
+    def test_rejects_invalid_connection_lifetime(self):
+        for value in ("invalid", "-1"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    ImproperlyConfigured,
+                    "SAFEPATH_DATABASE_CONN_MAX_AGE",
+                ):
+                    self.load_settings(
+                        {
+                            "DATABASE_URL": (
+                                "postgresql://user:pass@db.example.com:5432/safepath"
+                            ),
+                            "DJANGO_DEBUG": "False",
+                            "DJANGO_SECRET_KEY": "database-settings-test-secret-key-with-enough-length-92841",
+                            "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                            "SAFEPATH_DATABASE_CONN_MAX_AGE": value,
+                        }
+                    )
+
+    def test_rejects_non_postgres_database_url(self):
+        with self.assertRaisesRegex(
+            ImproperlyConfigured,
+            "must use the postgres",
+        ):
+            self.load_settings(
+                {
+                    "DATABASE_URL": "sqlite:////tmp/safepath-test.sqlite3",
+                    "DJANGO_DEBUG": "False",
+                    "DJANGO_SECRET_KEY": "database-settings-test-secret-key-with-enough-length-92841",
+                    "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                }
+            )
 
 
 class ContainerEntrypointTests(SimpleTestCase):

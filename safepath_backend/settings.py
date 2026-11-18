@@ -14,6 +14,7 @@ import os
 import secrets
 from pathlib import Path
 
+import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -91,13 +92,40 @@ WSGI_APPLICATION = "safepath_backend.wsgi.application"
 DATABASE_PATH = Path(
     os.environ.get("SAFEPATH_DATABASE_PATH") or BASE_DIR / "db.sqlite3"
 ).resolve()
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": DATABASE_PATH,
+if DATABASE_URL:
+    try:
+        conn_max_age = int(os.environ.get("SAFEPATH_DATABASE_CONN_MAX_AGE", "60"))
+    except ValueError as error:
+        raise ImproperlyConfigured(
+            "SAFEPATH_DATABASE_CONN_MAX_AGE must be an integer."
+        ) from error
+    if conn_max_age < 0:
+        raise ImproperlyConfigured(
+            "SAFEPATH_DATABASE_CONN_MAX_AGE must not be negative."
+        )
+    try:
+        DATABASES = {
+            "default": dj_database_url.parse(
+                DATABASE_URL,
+                conn_max_age=conn_max_age,
+                conn_health_checks=True,
+            )
+        }
+    except ValueError as error:
+        raise ImproperlyConfigured("DATABASE_URL is invalid.") from error
+    if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
+        raise ImproperlyConfigured(
+            "DATABASE_URL must use the postgres:// or postgresql:// scheme."
+        )
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(DATABASE_PATH),
+        }
     }
-}
 
 
 # Password validation

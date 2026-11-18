@@ -13,8 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      DATABASE_URL: postgres://safepath:safepath@127.0.0.1:5432/safepath
       DJANGO_DEBUG: "True"
+      SAFEPATH_DATABASE_CONN_MAX_AGE: "60"
       SAFEPATH_PYTHON: python
+
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:81e77a4833487b8132fe4b00bedd39dc3f74b8641e387f19312a48f7de218c2e
+        env:
+          POSTGRES_DB: safepath
+          POSTGRES_PASSWORD: safepath
+          POSTGRES_USER: safepath
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U safepath -d safepath"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -50,11 +67,15 @@ jobs:
       - name: Mypy
         run: mypy Model web safepath_backend scripts manage.py
 
-      - name: Django checks and tests
+      - name: Django checks and PostgreSQL migrations
         run: |
           python manage.py check
-          python manage.py test --verbosity 2
+          python manage.py migrate --noinput
+          python manage.py migrate --check
           python -m compileall -q Model web safepath_backend manage.py
+
+      - name: Django tests
+        run: python manage.py test --verbosity 2
 
       - name: Frontend build and lint
         run: |
