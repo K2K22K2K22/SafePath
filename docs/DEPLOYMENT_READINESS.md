@@ -134,6 +134,31 @@ The deployment guide now covers local setup, production topology, Python 3.13, r
 
 The documentation does not claim that a Render service, Neon database, CARTO account, paid road provider, or public deployment exists. Operator-managed backup and restore procedures use standard PostgreSQL and Python commands. The PostgreSQL dump, backup-list, and restore commands were exercised against a local PostgreSQL 16 container, and the SQLite backup command was exercised locally. No live production database was available for an end-to-end restore test.
 
+## Phase 12 final acceptance
+
+| Requirement | Executed evidence | Status |
+| --- | --- | --- |
+| Production web runtime | Gunicorn configuration check, native Gunicorn smoke test, and Podman container runtime | Passed locally |
+| Docker no longer uses `runserver` | Image build, entrypoint inspection, and Gunicorn process inspection | Passed with Podman |
+| Static asset collection and delivery | Production `collectstatic`, manifest verification, rendered URLs, CSS references, content types, and gzip checks | Passed locally |
+| PostgreSQL and SQLite | 190 tests on each database, PostgreSQL 16 migrations, and `migrate --check` | Passed locally |
+| Migration procedure | SQLite and PostgreSQL `migrate --noinput`, `migrate --check`, and Render startup command validation | Passed locally |
+| Production secret, debug, host, CSRF, HTTPS, and cookie controls | Django deployment checks, production gate, and deployment regression tests | Passed; only deliberate HSTS warnings remain |
+| External provider controls | Exact host allowlists, production road-provider approval, bounded requests, geocoder pacing and cache, and mocked upstream tests | Passed locally; live approved provider remains required |
+| OSM and Nominatim attribution | Visible template and Leaflet attribution, browser regression tests, and provider documentation | Passed |
+| Incident provenance | `data/source_metadata.json`, API allowlist, interface labels, and documentation | Passed; data remains unverified demonstration data |
+| Unknown coverage and safety claims | Coverage union tests, unknown-risk API tests, and browser assertions | Passed |
+| Existing routing, map, heatmap, and theme behavior | Django routing suite and 14 desktop and mobile Playwright tests | Passed |
+| Python and frontend quality gates | Ruff lint and format, Mypy, compilation, Django checks, Tailwind, ESLint, and JavaScript syntax | Passed |
+| Dependency audits | `pip-audit -r requirements.txt`, `npm audit --omit=dev`, and full `npm audit` | Passed with zero known findings |
+| GitHub Actions quality gates | Workflow YAML parse and Actionlint validation, with equivalent local gates executed | Local gates passed; remote run pending because no push was made |
+| Docker build and health | Fresh upgraded-dependency Podman image build, migrations, health probe, non-root UID, static manifest, and graceful stop | Passed with Podman; native Docker daemon unavailable |
+| Render configuration | Blueprint validated against `https://render.com/schema/render.yaml.json` on 2026-11-18 | Passed; no Render resource exists |
+| Deployment and operations documentation | Link checks, PostgreSQL 16 dump and restore exercise, SQLite backup exercise, diff check, and em-dash scan | Passed |
+| Tailwind and reusable components | Tailwind build produced no committed CSS diff and browser regressions passed | Passed |
+
+Repository preparation is complete for operator-managed deployment. Public deployment acceptance remains incomplete until the user creates the external resources, pushes the reviewed commits, runs GitHub Actions, applies the Blueprint, and performs the documented live smoke test.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
