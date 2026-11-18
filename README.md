@@ -310,8 +310,9 @@ Current local result:
 - Tailwind build and Django system checks passed
 - Python production dependency audit (`pip-audit -r requirements.txt`) reported zero known vulnerabilities
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
+- full npm dependency audit reported zero vulnerabilities
 
-The full npm development-tool audit currently reports two high-severity findings in Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The underlying advisory is `GHSA-fc5q-39xc-vjpf`, a regular-expression denial of service in `picomatch` 4.0.7 and earlier. No patched upstream `picomatch` release is available. The vulnerable code runs only in local and CI Tailwind glob matching, receives repository-controlled paths rather than user input, and is absent from production dependencies. `npm audit --omit=dev` reports zero vulnerabilities.
+An earlier audit reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The underlying advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. SAFE PATH never accepts user-controlled glob patterns, and the current full npm audit reports zero vulnerabilities. CI requires both npm audit commands to remain clean.
 
 GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. A fresh Podman image build and runtime passed locally. The native Docker daemon was unavailable in the delivery environment, so native Docker and remote CI remain required evidence.
 

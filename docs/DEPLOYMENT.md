@@ -77,9 +77,9 @@ pip-audit --requirement requirements.txt --progress-spinner off
 npm audit --omit=dev
 ```
 
-Both commands must complete without findings. The full `npm audit` command currently reports two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They map to `GHSA-fc5q-39xc-vjpf`, a regular-expression denial of service in `picomatch` 4.0.7 and earlier. No patched upstream `picomatch` release is available.
+Both commands must complete without findings. An earlier full `npm audit` run reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They mapped to `GHSA-fc5q-39xc-vjpf`, which was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. The current full npm audit reports zero vulnerabilities.
 
-The affected code runs only during local and CI Tailwind glob matching. It receives repository-controlled paths, not request data, and is not installed as a production application dependency. Do not apply `npm audit fix --force`, and do not replace the pinned Tailwind toolchain with an unverified major version. Re-run both production audits whenever dependencies change. A new production finding or any additional development finding must fail review until its exposure and mitigation are documented.
+SAFE PATH never accepts user-controlled glob patterns. The affected development code would run only during local and CI Tailwind glob matching with repository-controlled paths, and it is not installed as a production application dependency. Do not apply `npm audit fix --force`, and do not replace the pinned Tailwind toolchain with an unverified major version. CI requires both npm audit commands to remain clean. Any new finding must fail review until its exposure and mitigation are documented.
 
 ## Static assets
 
@@ -245,6 +245,32 @@ The command fetches `https://render.com/schema/render.yaml.json`, validates ever
 - `road_provider_unavailable` means that the configured provider is unavailable or that its exact host is not approved. It does not fall back to a different provider.
 - A missing CARTO key or an obvious placeholder causes production startup to fail. Use a real customer-owned key restricted to the deployed domain.
 - The geocoder cache and all other local files disappear after a restart or redeploy. This is expected on Render's ephemeral filesystem.
+
+### Optional live smoke test
+
+Run this procedure manually after deployment. It is not part of ordinary CI because the geocoding and route checks call external providers.
+
+```bash
+BASE_URL='https://YOUR-HOSTNAME'
+
+curl --fail-with-body --silent --show-error "$BASE_URL/health/"
+curl --fail-with-body --silent --show-error "$BASE_URL/health/ready/"
+curl --fail-with-body --silent --show-error "$BASE_URL/api/safety-heatmap/"
+curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/geocode/?q=Connaught%20Place%20Delhi"
+curl --fail-with-body --silent --show-error \
+  "$BASE_URL/api/routes/?start_lat=28.4748&start_lon=77.4764&end_lat=28.48&end_lon=77.482"
+
+asset_path="$(
+  curl --fail --silent --show-error "$BASE_URL/" \
+    | grep -o '/static/[^"[:space:]]*\.css' \
+    | head -n 1
+)"
+test -n "$asset_path"
+curl --fail-with-body --silent --show-error "$BASE_URL$asset_path" --output /dev/null
+```
+
+The health checks must return `{"status":"ok"}` and `{"status":"ready"}`. The heatmap and geocoder responses must be valid JSON. The route response must contain a route or a documented controlled error code, never a traceback. Inspect Render logs for provider failures, readiness errors, and `internal_error` events. Repeat the test after a cold start to confirm that the external database persists while local cache files are recreated.
 
 ## Docker
 

@@ -11,7 +11,7 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgres://safepath:safepath@127.0.0.1:5432/safepath
       DJANGO_DEBUG: "True"
@@ -49,11 +49,25 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Install Python dependencies
+      - name: Install production Python dependencies
+        run: pip install --requirement requirements.txt
+
+      - name: Install development Python dependencies
         run: pip install --requirement requirements-dev.txt
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Validate Render Blueprint
+        run: python scripts/validate_render.py render.yaml
+
+      - name: Audit production Python dependencies
+        run: pip-audit --requirement requirements.txt --progress-spinner off
+
+      - name: Audit frontend dependencies
+        run: |
+          npm audit --omit=dev
+          npm audit
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
@@ -90,6 +104,80 @@ jobs:
           export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
           python manage.py check --deploy
           python scripts/check_production.py
+
+      - name: Native Gunicorn and static asset smoke test
+        env:
+          DATABASE_URL: ""
+          DJANGO_ALLOWED_HOSTS: safepath.example.com
+          DJANGO_DEBUG: "False"
+          DJANGO_TRUST_X_FORWARDED_PROTO: "True"
+          CSRF_TRUSTED_ORIGINS: https://safepath.example.com
+          PORT: "8001"
+          SAFEPATH_CARTO_API_KEY: pk.eyJ1IjoiU0FGRVBBVEgtUFVCTElDSEVTRUtFWQifQ
+          SAFEPATH_CACHE_DIR: /tmp/safepath-ci-cache
+          SAFEPATH_DATABASE_PATH: /tmp/safepath-ci-native.sqlite3
+          SAFEPATH_OSM_API_ALLOWED_HOSTS: road-provider.internal
+          SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS: road-provider.internal
+          SAFEPATH_OSM_API_URL: https://road-provider.internal/api/interpreter
+        run: |
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          rm -f /tmp/safepath-ci-native.sqlite3
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput --ignore "web/css/src/*"
+          python scripts/check_production.py
+          gunicorn safepath_backend.wsgi:application \
+            --config gunicorn.conf.py \
+            --bind 127.0.0.1:8001 \
+            --workers 1 \
+            --timeout 60 \
+            --graceful-timeout 30 \
+            > /tmp/safepath-gunicorn.log 2>&1 &
+          gunicorn_pid=$!
+          cleanup() {
+            kill -TERM "$gunicorn_pid" 2>/dev/null || true
+            wait "$gunicorn_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..30}; do
+            if curl -fsS \
+              -H "Host: safepath.example.com" \
+              -H "X-Forwarded-Proto: https" \
+              http://127.0.0.1:8001/health/ \
+              > /tmp/safepath-native-health.json 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$gunicorn_pid" 2>/dev/null; then
+              cat /tmp/safepath-gunicorn.log
+              exit 1
+            fi
+            sleep 1
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          health = json.loads(Path("/tmp/safepath-native-health.json").read_text())
+          assert health == {"status": "ok"}, health
+          PY
+          curl -fsS \
+            -H "Host: safepath.example.com" \
+            -H "X-Forwarded-Proto: https" \
+            http://127.0.0.1:8001/health/ready/ \
+            > /tmp/safepath-native-ready.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          readiness = json.loads(Path("/tmp/safepath-native-ready.json").read_text())
+          assert readiness == {"status": "ready"}, readiness
+          PY
+          python scripts/verify_static_assets.py \
+            --base-url http://127.0.0.1:8001 \
+            --host-header safepath.example.com \
+            --manifest staticfiles/staticfiles.json
+          kill -TERM "$gunicorn_pid"
+          wait "$gunicorn_pid"
+          trap - EXIT
 
       - name: Frontend build and lint
         run: |
