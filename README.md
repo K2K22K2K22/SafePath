@@ -304,7 +304,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 192 Django tests passed
+- 193 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed

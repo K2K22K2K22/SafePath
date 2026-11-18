@@ -74,7 +74,7 @@ jobs:
           npm audit --omit=dev
           npm audit
           production_picomatch="$(
-            npm ls picomatch --omit=dev --all --parseable | tail -n +2
+            npm ls picomatch --omit=dev --all --parseable | tr -d '[:space:]'
           )"
           if [ -n "$production_picomatch" ]; then
             echo "picomatch must not be a production dependency" >&2
@@ -108,6 +108,7 @@ jobs:
           DATABASE_URL: postgresql://safepath:safepath@127.0.0.1:5432/safepath?sslmode=require
           DJANGO_ALLOWED_HOSTS: safepath.example.com
           DJANGO_DEBUG: "False"
+          DJANGO_TRUST_X_FORWARDED_PROTO: "True"
           SAFEPATH_CARTO_API_KEY: pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9
           SAFEPATH_OSM_API_ALLOWED_HOSTS: road-provider.internal
           SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS: road-provider.internal

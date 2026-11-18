@@ -34,13 +34,13 @@ class RenderBlueprintTests(SimpleTestCase):
         self.assertIn("pip install --requirement requirements.txt", build_command)
         self.assertIn("python manage.py collectstatic", build_command)
         self.assertIn('--ignore "web/css/src/*"', build_command)
-        self.assertIn("python scripts/check_production.py", start_command)
-        self.assertIn("python manage.py migrate --noinput", start_command)
-        self.assertLess(
-            start_command.index("python scripts/check_production.py"),
-            start_command.index("python manage.py migrate --noinput"),
+        commands = [command.strip() for command in start_command.split("&&")]
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[0], "python scripts/check_production.py")
+        self.assertEqual(commands[1], "python manage.py migrate --noinput")
+        self.assertTrue(
+            commands[2].startswith("gunicorn safepath_backend.wsgi:application")
         )
-        self.assertIn("gunicorn safepath_backend.wsgi:application", start_command)
         self.assertIn('--bind "0.0.0.0:${PORT:-10000}"', start_command)
         self.assertIn("--workers 1", start_command)
         self.assertNotIn("preDeployCommand", self.service)

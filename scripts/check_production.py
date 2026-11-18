@@ -56,6 +56,13 @@ def main():
             file=sys.stderr,
         )
         return 2
+    if settings.SECURE_PROXY_SSL_HEADER is None:
+        print(
+            "Production configuration error: DJANGO_TRUST_X_FORWARDED_PROTO=True "
+            "is required behind a trusted TLS proxy.",
+            file=sys.stderr,
+        )
+        return 2
 
     issues = run_checks(include_deployment_checks=True)
     unexpected = [issue for issue in issues if issue.id not in ALLOWED_HSTS_WARNINGS]

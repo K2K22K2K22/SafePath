@@ -103,13 +103,14 @@ Production mode redirects HTTP to HTTPS and marks session and CSRF cookies secur
 
 HSTS remains disabled by default. After the deployed hostname, certificate, and HTTPS redirect path have been verified, set `DJANGO_SECURE_HSTS_SECONDS` to a deliberate lifetime. Enable `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` only when every subdomain supports HTTPS. Browser preload submission is a separate, explicit decision. The subdomain and preload options fail startup when the HSTS duration is zero.
 
-Run the production checks with the same environment used by the deployment. The shell must already contain the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, and approved road-provider values from the platform environment. Do not substitute placeholder values; production settings intentionally reject them.
+Run the production checks with the same environment used by the deployment. The shell must already contain the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, trusted-proxy protocol setting, and approved road-provider values from the platform environment. Do not substitute placeholder values; production settings intentionally reject them.
 
 ```bash
 : "${DJANGO_SECRET_KEY:?Export the operator-provided Django secret}"
 : "${SAFEPATH_CARTO_API_KEY:?Export the customer-owned CARTO key}"
 : "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
 : "${DATABASE_URL:?Export the production PostgreSQL URL}"
+: "${DJANGO_TRUST_X_FORWARDED_PROTO:?Export True behind the trusted TLS proxy}"
 : "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
 : "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
 : "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
@@ -118,6 +119,7 @@ export DJANGO_SECRET_KEY
 export SAFEPATH_CARTO_API_KEY
 export DJANGO_ALLOWED_HOSTS
 export DATABASE_URL
+export DJANGO_TRUST_X_FORWARDED_PROTO
 export SAFEPATH_OSM_API_URL
 export SAFEPATH_OSM_API_ALLOWED_HOSTS
 export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
