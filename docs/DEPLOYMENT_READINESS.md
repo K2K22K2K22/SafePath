@@ -86,14 +86,13 @@ A deterministic synthetic benchmark used OSM-shaped short and medium grids. The 
 
 | Measurement | Short | Medium |
 | --- | ---: | ---: |
-| Mocked OSM load and parse | 3.9 ms | 40.1 ms |
+| Mocked provider download, parse, and graph build | 3.9 ms | 40.1 ms |
 | Graph construction | 3.2 ms | 34.3 ms |
 | Synthetic proximity scoring | 139.9 ms | 1,426.5 ms |
 | Dijkstra | 0.18 ms | 1.85 ms |
 | Modified A* | 0.25 ms | 2.99 ms |
 | Cold API response | 65.5 ms | 484.1 ms |
 | Warm cached-risk API response | 2.4 ms | 18.1 ms |
-| Python peak allocation during API request | 4.0 MiB | 0.5 MiB |
 
 Against commit `7ac17ff` in the same harness, route-option generation fell from 3.0 ms to 2.3 ms for the short graph and from 32.1 ms to 24.0 ms for the medium graph. Warm API responses fell from 4.2 ms to 2.4 ms and from 38.4 ms to 18.1 ms respectively. Cold API responses fell from 74.0 ms to 65.5 ms and from 571.9 ms to 484.1 ms. These are local synthetic measurements, not service-level objectives. One bounded public Overpass development request failed with `RoadDataUnavailable` in 603 ms, so live provider timing remains unverified.
 
