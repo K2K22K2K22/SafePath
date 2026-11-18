@@ -110,6 +110,7 @@ jobs:
             exit 1
           fi
           test ! -e db.sqlite3
+          docker compose exec -T django test -s /data/db.sqlite3
           docker compose exec -T django python manage.py migrate --check
           if ! {
             curl --fail --silent --output /dev/null \
@@ -127,6 +128,7 @@ jobs:
           docker run --detach --name safepath-ci \
             --env DJANGO_SECRET_KEY=ci-only-secret \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_RUN_MIGRATIONS=true \
             --publish 8000:8000 safepath-ci
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci)"
@@ -146,6 +148,7 @@ jobs:
             exit 1
           fi
           if ! {
+            docker exec safepath-ci test -s /data/db.sqlite3 &&
             curl --fail --silent --output /dev/null \
               http://127.0.0.1:8000/static/web/vendor/leaflet/leaflet.js &&
             curl --fail --silent --output /dev/null \

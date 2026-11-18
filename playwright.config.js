@@ -18,6 +18,7 @@ module.exports = defineConfig({
     command: `${pythonExecutable} manage.py runserver 127.0.0.1:8000 --noreload`,
     env: {
       DJANGO_DEBUG: "True",
+      SAFEPATH_DATABASE_PATH: "/tmp/safepath-e2e.sqlite3",
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

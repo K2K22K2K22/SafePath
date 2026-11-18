@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes port `8000`, applies standard Django migrations at startup, serves the vendored static assets through Django's development server, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container and mounts the working tree. SQLite data stays in the `safepath_data` named volume, so container startup does not create a root-owned database in the host checkout. It is suitable for local evaluation, not a hardened production deployment.
+The container exposes port `8000`, runs Gunicorn as an unprivileged user, applies standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -95,7 +95,11 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
 | `DJANGO_SECRET_KEY` | unset | Required when debug mode is off |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Accepted deployment hosts; loopback hosts are always retained for health checks |
+| `PORT` | `8000` | Container port used by Gunicorn |
+| `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
+| `GUNICORN_TIMEOUT` | `60` | Gunicorn request timeout in seconds |
 | `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
+| `SAFEPATH_RUN_MIGRATIONS` | `false` in the image | Run migrations before Gunicorn when set to `true` |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
 | `SAFEPATH_GEOCODER_ALLOWED_HOSTS` | `nominatim.openstreetmap.org` | HTTPS hosts allowed for geocoding |
 | `SAFEPATH_ROUTE_THROTTLE_RATE` | `20/minute` | Route API request limit |

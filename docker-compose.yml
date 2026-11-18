@@ -5,17 +5,21 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
       - safepath_data:/data
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - PORT=8000
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       - DJANGO_DEBUG=False
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       - SAFEPATH_DATABASE_PATH=/data/db.sqlite3
-    restart: always
+      - SAFEPATH_RUN_MIGRATIONS=${SAFEPATH_RUN_MIGRATIONS:-true}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-60}
+    restart: unless-stopped
+    stop_grace_period: 30s
 
 volumes:
   safepath_data:
