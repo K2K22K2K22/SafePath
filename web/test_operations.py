@@ -43,9 +43,13 @@ def route_option():
 
 class HealthEndpointTests(SimpleTestCase):
     def test_liveness_endpoints_do_not_check_dependencies(self):
+        self.client.cookies["sessionid"] = "private-session"
         with (
             patch("Model.views.connections") as connections,
             patch("Model.views.requests.get") as provider_request,
+            patch(
+                "django.contrib.sessions.backends.db.SessionStore.load"
+            ) as session_load,
         ):
             for path in ("/health/", "/health/live/"):
                 with self.subTest(path=path):
@@ -54,11 +58,16 @@ class HealthEndpointTests(SimpleTestCase):
 
         connections.assert_not_called()
         provider_request.assert_not_called()
+        session_load.assert_not_called()
 
     def test_readiness_checks_only_the_database(self):
+        self.client.cookies["sessionid"] = "private-session"
         with (
             patch("Model.views.connections") as connections,
             patch("Model.views.requests.get") as provider_request,
+            patch(
+                "django.contrib.sessions.backends.db.SessionStore.load"
+            ) as session_load,
         ):
             response = self.client.get("/health/ready/", HTTP_HOST="localhost")
 
@@ -66,6 +75,7 @@ class HealthEndpointTests(SimpleTestCase):
         self.assertEqual(response.json(), {"status": "ready"})
         connections.__getitem__.assert_called_once_with("default")
         provider_request.assert_not_called()
+        session_load.assert_not_called()
 
     def test_readiness_fails_without_exposing_database_errors(self):
         with patch("Model.views.connections") as connections:
@@ -241,6 +251,20 @@ class OperationsLoggingTests(SimpleTestCase):
         self.assertNotIn("private-place", message)
         self.assertIn("[redacted]", message)
 
+    def test_log_formatter_redacts_authorization_credentials(self):
+        from safepath_backend.logging import redact_query_values
+
+        for credential in (
+            "authorization=Bearer private-token",
+            "authorization=Basic private-token",
+            "authorization=private-token",
+            '"authorization": "Bearer private-token"',
+        ):
+            with self.subTest(credential=credential):
+                message = redact_query_values(credential)
+                self.assertNotIn("private-token", message)
+                self.assertIn("[redacted]", message)
+
     def test_log_formatter_redacts_exception_text(self):
         from safepath_backend.logging import SafeLogFormatter
 
@@ -278,7 +302,7 @@ class OperationsLoggingTests(SimpleTestCase):
             logging.ERROR,
             __file__,
             1,
-            str(exc_info[1]),
+            f"Failed: {exc_info[1]}",
             (),
             exc_info,
         )

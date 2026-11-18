@@ -14,7 +14,11 @@ from django.conf import settings
 from django.core.cache import caches
 from django.core.files import locks
 from django.db import connections
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    throttle_classes,
+)
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -63,16 +67,19 @@ class HeatmapRateThrottle(ScopedRateThrottle):
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def health(request):
     return Response({"status": "ok"})
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def health_live(request):
     return Response({"status": "ok"})
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def health_ready(request):
     try:
         with connections["default"].cursor() as cursor:
