@@ -308,9 +308,10 @@ Current local result:
 - Mypy passed
 - ESLint and Node syntax checks passed
 - Tailwind build and Django system checks passed
+- Python production dependency audit (`pip-audit -r requirements.txt`) reported zero known vulnerabilities
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
 
-The full npm development-tool audit currently reports two high-severity findings in Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They affect local build tooling only. `npm audit --omit=dev` reports zero vulnerabilities, and no patched upstream `picomatch` release is currently available.
+The full npm development-tool audit currently reports two high-severity findings in Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The underlying advisory is `GHSA-fc5q-39xc-vjpf`, a regular-expression denial of service in `picomatch` 4.0.7 and earlier. No patched upstream `picomatch` release is available. The vulnerable code runs only in local and CI Tailwind glob matching, receives repository-controlled paths rather than user input, and is absent from production dependencies. `npm audit --omit=dev` reports zero vulnerabilities.
 
 GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. A fresh Podman image build and runtime passed locally. The native Docker daemon was unavailable in the delivery environment, so native Docker and remote CI remain required evidence.
 

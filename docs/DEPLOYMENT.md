@@ -68,6 +68,19 @@ python scripts/check_production.py
 
 Django reports `security.W004` while HSTS is deliberately disabled. The production check script permits only the HSTS warnings `security.W004`, `security.W005`, and `security.W021`; every other warning or error fails the gate. It also requires explicit production approval for the road-data provider and rejects known public Overpass hosts.
 
+## Dependency audits
+
+Audit the pinned production Python environment and the frontend production dependency set:
+
+```bash
+pip-audit --requirement requirements.txt --progress-spinner off
+npm audit --omit=dev
+```
+
+Both commands must complete without findings. The full `npm audit` command currently reports two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They map to `GHSA-fc5q-39xc-vjpf`, a regular-expression denial of service in `picomatch` 4.0.7 and earlier. No patched upstream `picomatch` release is available.
+
+The affected code runs only during local and CI Tailwind glob matching. It receives repository-controlled paths, not request data, and is not installed as a production application dependency. Do not apply `npm audit fix --force`, and do not replace the pinned Tailwind toolchain with an unverified major version. Re-run both production audits whenever dependencies change. A new production finding or any additional development finding must fail review until its exposure and mitigation are documented.
+
 ## Static assets
 
 Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and collects files into `staticfiles/`. The Docker build performs this step automatically. A native production build must run:

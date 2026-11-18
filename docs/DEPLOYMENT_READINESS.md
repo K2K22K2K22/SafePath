@@ -118,6 +118,14 @@ The repository now contains `.python-version`, a native Python `render.yaml`, a 
 
 The Phase 9 local matrix passed 188 Django tests, Python lint, format, type, and compile checks. The Blueprint passed `https://render.com/schema/render.yaml.json` validation on 2026-11-18. Remote CI and a real Render deploy remain pending because no push or public deployment was performed.
 
+## Phase 10 dependency and deployment verification
+
+The first production Python audit found 88 known vulnerabilities across eight outdated pins. Django was upgraded from 5.2.8 to 5.2.17, Django REST Framework from 3.16.1 to 3.18.2, and the affected `certifi`, `idna`, `python-dotenv`, `requests`, `sqlparse`, and `urllib3` pins were upgraded to their fixed releases. `pip-audit -r requirements.txt` then reported no known vulnerabilities. The updated dependencies passed all 190 Django tests on SQLite and PostgreSQL 16, plus Django checks, Ruff, Mypy, compilation, and the Render Blueprint validation.
+
+`npm audit --omit=dev` reports zero vulnerabilities. The full frontend audit reports two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They map to `GHSA-fc5q-39xc-vjpf`, a regular-expression denial of service in `picomatch` 4.0.7 and earlier. No patched upstream `picomatch` release is available. The vulnerable code is used only by local and CI Tailwind glob matching, receives repository-controlled paths rather than user input, and is absent from production dependencies. The exposure and mitigation are documented, and the full audit is not treated as a clean production result.
+
+Provider behavior remains covered by deterministic mocked upstream tests. Ordinary CI does not call public OSM or Nominatim services. Native Docker, remote CI, and live Render behavior remain unverified because the repository was not pushed and no public resource was created.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
