@@ -318,8 +318,8 @@ The route API can execute multiple searches per request. Each search has its own
 flowchart TB
     Client[Browser] -->|HTTP 8000| Container[SAFE PATH container]
     Client -->|HTTPS map tiles| Tiles[OSM and CARTO tiles]
-    Container --> Django[Django development server]
-    Django --> Static[Local static assets]
+    Container --> Django[Gunicorn]
+    Django --> Static[WhiteNoise static assets]
     Django -->|HTTPS road and location data| External[OSM and Nominatim]
     Django --> CSV[Bundled incident CSV]
     Container --> Database[(safepath_data volume)]
@@ -337,7 +337,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container is intended for local evaluation. It applies standard Django migrations at startup, runs Django's development server with static-file serving enabled for this image, and Compose mounts the repository into the container. Compose also loads `.env`, including `SAFEPATH_*` values, into the container. SQLite uses the `safepath_data` named volume rather than the host checkout, preventing root-owned database files in the working tree. A production deployment would need a production WSGI server, static asset collection, persistent storage policy, TLS termination, and an appropriate secret-management process.
+The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container. SQLite uses the `safepath_data` named volume rather than the host checkout. A production deployment still needs an external persistent database, TLS termination, provider credentials, and an appropriate secret-management process.
 
 ## 12. Test boundaries
 

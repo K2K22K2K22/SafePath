@@ -1,16 +1,29 @@
 services:
+  data-init:
+    image: safepath:local
+    build: .
+    user: "0:0"
+    entrypoint: ["chown", "-R", "10001:10001", "/data"]
+    volumes:
+      - safepath_data:/data
+    restart: "no"
+
   django:
+    image: safepath:local
     build: .
     container_name: safepath_django
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     volumes:
       - safepath_data:/data
     env_file:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - PORT=8000
+      - PORT=${PORT:-8000}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       - DJANGO_DEBUG=False
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
@@ -18,8 +31,10 @@ services:
       - SAFEPATH_RUN_MIGRATIONS=${SAFEPATH_RUN_MIGRATIONS:-true}
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
       - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-60}
+      - GUNICORN_GRACEFUL_TIMEOUT=${GUNICORN_GRACEFUL_TIMEOUT:-30}
+      - DOCKER_STOP_GRACE_PERIOD=${DOCKER_STOP_GRACE_PERIOD:-40s}
     restart: unless-stopped
-    stop_grace_period: 30s
+    stop_grace_period: "${DOCKER_STOP_GRACE_PERIOD:-40s}"
 
 volumes:
   safepath_data:

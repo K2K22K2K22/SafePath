@@ -10,8 +10,9 @@ SAFE PATH runs under Gunicorn in the production container. The configuration rea
 | `GUNICORN_WORKERS` | `2` | Number of worker processes |
 | `GUNICORN_TIMEOUT` | `60` | Worker request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Graceful shutdown timeout in seconds |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace period; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
 
-Gunicorn binds to `0.0.0.0`, writes access and process logs to standard output, and forwards the configured graceful timeout when the platform sends a termination signal.
+Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when the platform sends a termination signal. The container redirects standard error to standard output before migrations and Gunicorn start, so all container process logs use one stream. Startup fails with exit code 64 unless both grace values are integer seconds and the Docker stop grace is greater than the Gunicorn graceful timeout. Docker must therefore allow more time than Gunicorn's graceful timeout or it can terminate workers before graceful shutdown finishes.
 
 The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build. The image build runs `collectstatic`, and WhiteNoise serves compressed, manifest-based assets from the production runtime.
 
@@ -37,7 +38,7 @@ Choose one mode for each deployment:
 | Pre-deploy or release command | `SAFEPATH_RUN_MIGRATIONS=false` | Run `python manage.py migrate --noinput` once before starting the new release |
 | Single-instance academic demo | `SAFEPATH_RUN_MIGRATIONS=true` | The container runs `python manage.py migrate --noinput` before starting Gunicorn |
 
-Do not enable startup migrations when several application instances start from the same release at the same time. The pre-deploy mode prevents concurrent migration attempts. The startup mode is intended only for one application instance.
+Do not enable startup migrations when several application instances start from the same release at the same time. The pre-deploy mode prevents concurrent migration attempts. The startup mode is intended only for one application instance. The container accepts only the exact values `true` and `false`; any other value stops startup with exit code 64.
 
 Migrations require a reachable database. They must never run as part of `docker build`.
 
@@ -51,7 +52,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Compose starts Gunicorn on port `8000`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. The image contains the application source, so rebuild it after a source change.
+Compose starts Gunicorn on `PORT` (default `8000`), runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change.
 
 Check the service:
 
@@ -78,11 +79,24 @@ The image reads `PORT` and starts Gunicorn after the selected migration step:
 
 ```bash
 docker build --tag safepath .
-docker run --rm --publish 8000:8000 \
-  --env DJANGO_SECRET_KEY="replace-with-a-long-random-secret" \
+docker run --rm --publish "${PORT:-8000}:${PORT:-8000}" \
+  --stop-timeout 40 \
+  --env-file .env \
+  --env PORT="${PORT:-8000}" \
+  --env DJANGO_DEBUG=False \
   --env DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1" \
+  --env SAFEPATH_DATABASE_PATH=/data/db.sqlite3 \
   --env SAFEPATH_RUN_MIGRATIONS=true \
+  --env GUNICORN_GRACEFUL_TIMEOUT=30 \
+  --env DOCKER_STOP_GRACE_PERIOD=40s \
+  --volume safepath_data:/data \
   safepath
 ```
 
-Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation.
+Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation. A direct container using a volume created by an older root-owned image needs a one-time ownership repair before it can start as the non-root user:
+
+```bash
+docker run --rm --user root \
+  --volume safepath_data:/data \
+  safepath chown -R 10001:10001 /data
+```

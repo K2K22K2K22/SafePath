@@ -1,5 +1,7 @@
 import os
 import runpy
+import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -71,6 +73,55 @@ class ProductionStaticAssetSettingsTests(SimpleTestCase):
             config["STORAGES"]["staticfiles"]["BACKEND"],
             "whitenoise.storage.CompressedManifestStaticFilesStorage",
         )
+
+
+class ContainerEntrypointTests(SimpleTestCase):
+    def run_entrypoint(self, **environment):
+        entrypoint = Path(settings.BASE_DIR) / "docker" / "entrypoint.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            fake_gunicorn = Path(directory) / "gunicorn"
+            fake_gunicorn.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_gunicorn.chmod(0o755)
+            process_environment = os.environ.copy()
+            process_environment["PATH"] = (
+                f"{directory}{os.pathsep}{process_environment.get('PATH', '')}"
+            )
+            process_environment.update(environment)
+            return subprocess.run(
+                ["/bin/sh", str(entrypoint)],
+                env=process_environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    def test_accepts_stop_grace_greater_than_gunicorn_grace(self):
+        result = self.run_entrypoint(
+            SAFEPATH_RUN_MIGRATIONS="false",
+            GUNICORN_GRACEFUL_TIMEOUT="30",
+            DOCKER_STOP_GRACE_PERIOD="40s",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_rejects_invalid_shutdown_grace(self):
+        for environment in (
+            {
+                "GUNICORN_GRACEFUL_TIMEOUT": "30",
+                "DOCKER_STOP_GRACE_PERIOD": "30",
+            },
+            {
+                "GUNICORN_GRACEFUL_TIMEOUT": "invalid",
+                "DOCKER_STOP_GRACE_PERIOD": "40s",
+            },
+        ):
+            with self.subTest(environment=environment):
+                result = self.run_entrypoint(
+                    SAFEPATH_RUN_MIGRATIONS="false",
+                    **environment,
+                )
+
+                self.assertEqual(result.returncode, 64, result.stdout + result.stderr)
 
 
 class StaticAssetVerifierTests(SimpleTestCase):

@@ -42,7 +42,7 @@ A production settings check with a deliberately short test key reported five war
 
 The latest remote CI run for `9085090` passed Python, frontend, browser, and Compose configuration checks. It failed the new Compose startup assertion that checks for a host checkout database file. Earlier CI run `44215010163` passed for commit `80fbfaf`. The Compose startup failure must be resolved before deployment readiness can be claimed.
 
-## Current deployment posture
+## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
 

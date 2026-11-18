@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes port `8000`, runs Gunicorn as an unprivileged user, applies standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
+The container exposes `PORT` (default `8000`), runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -98,6 +98,8 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `PORT` | `8000` | Container port used by Gunicorn |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
 | `GUNICORN_TIMEOUT` | `60` | Gunicorn request timeout in seconds |
+| `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Gunicorn graceful shutdown timeout in seconds |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace; must be greater than Gunicorn's graceful timeout |
 | `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
 | `SAFEPATH_RUN_MIGRATIONS` | `false` in the image | Run migrations before Gunicorn when set to `true` |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
@@ -250,7 +252,7 @@ DJANGO_DEBUG=True venv/bin/python manage.py check
 DJANGO_DEBUG=True venv/bin/python manage.py test
 venv/bin/ruff check .
 venv/bin/ruff format --check .
-venv/bin/mypy Model web safepath_backend manage.py
+venv/bin/mypy Model web safepath_backend scripts manage.py
 DJANGO_DEBUG=True venv/bin/python -m compileall -q Model web safepath_backend manage.py
 ```
 
@@ -269,10 +271,10 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 61 Django tests passed
+- 67 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
-- Mypy passed for 30 source files
+- Mypy passed for 32 source files
 - ESLint and Node syntax checks passed
 - Tailwind build and Django system checks passed
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
@@ -330,7 +332,7 @@ docs/
 - Map tiles remain network-dependent even though map libraries are vendored locally.
 - The bundled dataset has finite geographic coverage. Routes that are not fully covered by it are reported as unrated rather than safe.
 - OSM turn restrictions and relation-based restrictions are not applied, so routes may ignore valid turn bans and differ from production routers.
-- The included Docker configuration uses the Django development server and is not production hardened.
+- The included Docker configuration runs Gunicorn as a non-root user, but public deployment still requires an external production database and provider credentials.
 - SAFE PATH has no custom authentication workflow, user accounts, personalization, live incident reporting, or incident moderation.
 - No external LLM, deep learning model, FDL component, or fabricated fallback data is present.
 

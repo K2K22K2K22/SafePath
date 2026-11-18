@@ -82,16 +82,44 @@ jobs:
           trap 'rm -f .env' EXIT
           cp .env.example .env
           sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
-          compose_config="$(docker compose config)"
-          echo "$compose_config" | grep -q 'SAFEPATH_DATABASE_PATH: /data/db.sqlite3'
-          echo "$compose_config" | grep -q 'source: safepath_data'
+          sed -i 's/^PORT=.*/PORT=9000/' .env
+          docker compose config --format json > /tmp/safepath-compose.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("/tmp/safepath-compose.json").read_text())
+          django = config["services"]["django"]
+          assert django["environment"]["PORT"] == "9000"
+          assert django["ports"][0]["target"] == 9000
+          assert django["ports"][0]["published"] == "9000"
+          assert django["environment"]["SAFEPATH_DATABASE_PATH"] == "/data/db.sqlite3"
+          assert django["environment"]["SAFEPATH_RUN_MIGRATIONS"] == "true"
+          assert django["volumes"][0]["source"] == "safepath_data"
+          assert django["stop_grace_period"] == "40s"
+          assert django["depends_on"]["data-init"]["condition"] == "service_completed_successfully"
+          assert config["services"]["data-init"]["user"] == "0:0"
+          assert config["services"]["data-init"]["entrypoint"] == [
+              "chown", "-R", "10001:10001", "/data"
+          ]
+          PY
 
       - name: Docker Compose startup
         run: |
           trap 'docker compose down --volumes; rm -f .env' EXIT
+          export COMPOSE_PROJECT_NAME=safepath-ci
           cp .env.example .env
           sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
-          docker compose up --detach --build
+          docker compose build
+          docker volume create \
+            --label com.docker.compose.project=safepath-ci \
+            --label com.docker.compose.volume=safepath_data \
+            safepath-ci_safepath_data
+          image_id="$(docker compose images -q django)"
+          docker run --rm --user root \
+            --volume safepath-ci_safepath_data:/data \
+            "$image_id" touch /data/legacy-root-owned
+          docker compose up --detach
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath_django)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath_django)"
@@ -109,6 +137,19 @@ jobs:
             docker compose logs
             exit 1
           fi
+          docker compose exec -T django python - <<'PY'
+          import os
+          from pathlib import Path
+
+          status = Path("/proc/1/status").read_text()
+          uid = next(line.split()[1] for line in status.splitlines() if line.startswith("Uid:"))
+          assert uid == "10001", uid
+          command = Path("/proc/1/cmdline").read_bytes().split(b"\0")
+          assert any(b"gunicorn" in part for part in command), command
+          assert os.readlink("/proc/1/fd/1") == os.readlink("/proc/1/fd/2")
+          legacy = os.stat("/data/legacy-root-owned")
+          assert (legacy.st_uid, legacy.st_gid) == (10001, 10001)
+          PY
           test ! -e db.sqlite3
           docker compose exec -T django test -s /data/db.sqlite3
           docker compose exec -T django python manage.py migrate --check
@@ -117,6 +158,8 @@ jobs:
           python scripts/verify_static_assets.py \
             --base-url http://127.0.0.1:8000 \
             --manifest /tmp/safepath-staticfiles.json
+          docker compose stop django
+          test "$(docker inspect --format '{{.State.ExitCode}}' safepath_django)" = "0"
 
       - name: Docker build and health check
         run: |
@@ -160,3 +203,69 @@ jobs:
             docker logs safepath-ci
             exit 1
           }
+          docker exec -i safepath-ci python - <<'PY'
+          import os
+          from pathlib import Path
+
+          status = Path("/proc/1/status").read_text()
+          uid = next(line.split()[1] for line in status.splitlines() if line.startswith("Uid:"))
+          assert uid == "10001", uid
+          command = Path("/proc/1/cmdline").read_bytes().split(b"\0")
+          assert any(b"gunicorn" in part for part in command), command
+          assert os.readlink("/proc/1/fd/1") == os.readlink("/proc/1/fd/2")
+          PY
+
+          docker run --detach --name safepath-ci-no-migrations \
+            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_RUN_MIGRATIONS=false \
+            safepath-ci
+          for attempt in {1..60}; do
+            container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci-no-migrations)"
+            health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci-no-migrations)"
+            if [ "$health_status" = "healthy" ]; then
+              break
+            fi
+            if [ "$container_status" = "exited" ] || [ "$health_status" = "unhealthy" ]; then
+              docker logs safepath-ci-no-migrations
+              exit 1
+            fi
+            sleep 2
+          done
+          health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci-no-migrations)"
+          if [ "$health_status" != "healthy" ]; then
+            docker logs safepath-ci-no-migrations
+            exit 1
+          fi
+          migration_state="$(docker exec safepath-ci-no-migrations python manage.py showmigrations --plan)"
+          if printf '%s\n' "$migration_state" | grep -q '\[X\]'; then
+            docker logs safepath-ci-no-migrations
+            exit 1
+          fi
+          docker stop --timeout 40 safepath-ci-no-migrations
+          test "$(docker inspect --format '{{.State.ExitCode}}' safepath-ci-no-migrations)" = "0"
+
+          set +e
+          docker run --rm \
+            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_RUN_MIGRATIONS=invalid \
+            safepath-ci
+          invalid_mode_status=$?
+          set -e
+          test "$invalid_mode_status" -eq 64
+
+          set +e
+          docker run --rm \
+            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_RUN_MIGRATIONS=false \
+            --env GUNICORN_GRACEFUL_TIMEOUT=30 \
+            --env DOCKER_STOP_GRACE_PERIOD=30 \
+            safepath-ci
+          invalid_grace_status=$?
+          set -e
+          test "$invalid_grace_status" -eq 64
+
+          docker stop --timeout 40 safepath-ci
+          test "$(docker inspect --format '{{.State.ExitCode}}' safepath-ci)" = "0"
