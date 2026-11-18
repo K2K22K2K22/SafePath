@@ -13,7 +13,20 @@ SAFE PATH runs under Gunicorn in the production container. The configuration rea
 
 Gunicorn binds to `0.0.0.0`, writes access and process logs to standard output, and forwards the configured graceful timeout when the platform sends a termination signal.
 
-The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build.
+The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build. The image build runs `collectstatic`, and WhiteNoise serves compressed, manifest-based assets from the production runtime.
+
+## Static assets
+
+Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and collects files into `staticfiles/`. The Docker build performs this step automatically. A native production build must run:
+
+```bash
+DJANGO_DEBUG=False \
+DJANGO_SECRET_KEY="replace-with-a-long-random-secret" \
+DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+python manage.py collectstatic --noinput --ignore "web/css/src/*"
+```
+
+Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
 
 ## Migration modes
 

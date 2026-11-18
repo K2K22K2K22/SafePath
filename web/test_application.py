@@ -5,6 +5,20 @@ from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.test import SimpleTestCase
 
+LOCAL_MAP_ASSETS = [
+    "web/vendor/leaflet/leaflet.css",
+    "web/vendor/leaflet/leaflet.js",
+    "web/vendor/leaflet/images/layers.png",
+    "web/vendor/leaflet/images/layers-2x.png",
+    "web/vendor/leaflet/images/marker-icon.png",
+    "web/vendor/leaflet/images/marker-shadow.png",
+    "web/vendor/leaflet-heat/leaflet-heat.js",
+    "web/css/app.css",
+    "web/js/script.js",
+    "web/images/favicon.svg",
+    "web/images/location_on.png",
+]
+
 
 class ApplicationSmokeTests(SimpleTestCase):
     def test_home_page_loads_route_components(self):
@@ -39,19 +53,7 @@ class ApplicationSmokeTests(SimpleTestCase):
         )
 
     def test_local_map_assets_are_available(self):
-        assets = [
-            "web/vendor/leaflet/leaflet.css",
-            "web/vendor/leaflet/leaflet.js",
-            "web/vendor/leaflet/images/layers.png",
-            "web/vendor/leaflet/images/layers-2x.png",
-            "web/vendor/leaflet/images/marker-icon.png",
-            "web/vendor/leaflet/images/marker-shadow.png",
-            "web/vendor/leaflet-heat/leaflet-heat.js",
-            "web/css/app.css",
-            "web/js/script.js",
-        ]
-
-        for asset in assets:
+        for asset in LOCAL_MAP_ASSETS:
             with self.subTest(asset=asset):
                 path = finders.find(asset)
                 self.assertIsNotNone(path)

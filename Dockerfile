@@ -20,7 +20,11 @@ COPY --chown=safepath:safepath manage.py gunicorn.conf.py ./
 COPY --chown=safepath:safepath Model web safepath_backend data ./
 COPY --chown=safepath:safepath docker/entrypoint.sh /app/docker/entrypoint.sh
 
-RUN chmod 755 /app/docker/entrypoint.sh
+RUN chmod 755 /app/docker/entrypoint.sh \
+    && DJANGO_DEBUG=False \
+       DJANGO_SECRET_KEY=build-only-not-a-production-secret \
+       DJANGO_ALLOWED_HOSTS=localhost \
+       python manage.py collectstatic --noinput --ignore "web/css/src/*"
 
 USER safepath
 EXPOSE 8000
