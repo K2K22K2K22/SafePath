@@ -76,5 +76,10 @@ Before changing a provider:
 2. Use HTTPS and exact host allowlists. Add an explicit production road-provider approval only after the agreement is in place.
 3. Keep request limits compatible with the provider agreement and SAFE PATH's resource bounds.
 4. Update visible attribution and this guide when provider terms change.
-5. Run the mocked provider tests, then perform the manual live smoke test in [DEPLOYMENT.md](DEPLOYMENT.md#optional-live-smoke-test).
+5. Run the deterministic mocked provider tests, then perform the manual live smoke test in [DEPLOYMENT.md](DEPLOYMENT.md#optional-live-smoke-test):
+
+```bash
+DJANGO_DEBUG=True python manage.py test \
+  web.test_osm_graph web.test_geocode_api --verbosity 2
+```
 6. Verify that logs and responses contain no credentials, query strings, or upstream response text.

@@ -103,24 +103,24 @@ Production mode redirects HTTP to HTTPS and marks session and CSRF cookies secur
 
 HSTS remains disabled by default. After the deployed hostname, certificate, and HTTPS redirect path have been verified, set `DJANGO_SECURE_HSTS_SECONDS` to a deliberate lifetime. Enable `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` only when every subdomain supports HTTPS. Browser preload submission is a separate, explicit decision. The subdomain and preload options fail startup when the HSTS duration is zero.
 
-Run the production checks with the same environment used by the deployment:
+Run the production checks with the same environment used by the deployment. The shell must already contain the operator-provided Django secret, customer-owned CARTO key, deployed host, and approved road-provider values from the platform environment. Do not substitute placeholder values; production settings intentionally reject them.
 
 ```bash
-DJANGO_DEBUG=False \
-DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
-DJANGO_ALLOWED_HOSTS="safepath.example.com" \
-SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
-SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
-SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
-SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
+: "${DJANGO_SECRET_KEY:?Export the operator-provided Django secret}"
+: "${SAFEPATH_CARTO_API_KEY:?Export the customer-owned CARTO key}"
+: "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
+: "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
+: "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
+: "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
+
+export DJANGO_SECRET_KEY
+export SAFEPATH_CARTO_API_KEY
+export DJANGO_ALLOWED_HOSTS
+export SAFEPATH_OSM_API_URL
+export SAFEPATH_OSM_API_ALLOWED_HOSTS
+export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
+export DJANGO_DEBUG=False
 python manage.py check --deploy
-DJANGO_DEBUG=False \
-DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
-DJANGO_ALLOWED_HOSTS="safepath.example.com" \
-SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
-SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
-SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
-SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
 python scripts/check_production.py
 ```
 
@@ -141,17 +141,13 @@ SAFE PATH never accepts user-controlled glob patterns. The affected development 
 
 ## Static assets
 
-Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and collects files into `staticfiles/`. The Docker build performs this step automatically. A native production build must run:
+Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and collects files into `staticfiles/`. The Docker build performs this step automatically. With the complete production environment exported as described above, a native production build must run:
 
 ```bash
-DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
-DJANGO_DEBUG=False \
-DJANGO_ALLOWED_HOSTS="safepath.example.com" \
-SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
 python manage.py collectstatic --noinput --clear --ignore "web/css/src/*"
 ```
 
-The secret file must be readable only by the release process, so shell history records the file path rather than the secret value. Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
+The environment's secret values must come from the release secret store so shell history records only variable names. Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
 
 ## Database
 
@@ -205,22 +201,61 @@ pg_restore \
   safepath-YYYYMMDDTHHMMSSZ.dump
 ```
 
-Stop application instances before restoring over an existing database. After restore, run `python manage.py migrate --check`, start one instance, verify `/health/ready/`, and test admin login. A successful database restore does not restore provider availability or the incident dataset.
-
-For local SQLite, use Python's online backup API instead of copying a live database file:
+Stop application instances before restoring over an existing database. After restore, run `migrate --check` against the restored database with the complete production environment exported:
 
 ```bash
-python - <<'PY'
-import sqlite3
+DATABASE_URL="$DIRECT_DATABASE_URL" python manage.py migrate --check
+```
 
-source = sqlite3.connect("db.sqlite3")
-target = sqlite3.connect("db.backup.sqlite3")
+Then start one instance, verify `/health/ready/`, and test admin login. A successful database restore does not restore provider availability or the incident dataset.
+
+For local SQLite, use Python's online backup API instead of copying a live database file. The source path honors `SAFEPATH_DATABASE_PATH` and defaults to the repository's `db.sqlite3`:
+
+```bash
+export SAFEPATH_SQLITE_BACKUP_PATH="${SAFEPATH_SQLITE_BACKUP_PATH:-${SAFEPATH_DATABASE_PATH:-db.sqlite3}.backup}"
+python - <<'PY'
+import os
+import sqlite3
+from pathlib import Path
+
+source_path = Path(os.environ.get("SAFEPATH_DATABASE_PATH") or "db.sqlite3")
+backup_path = Path(os.environ["SAFEPATH_SQLITE_BACKUP_PATH"])
+if not source_path.is_file():
+    raise SystemExit(f"SQLite database does not exist: {source_path}")
+
+source = sqlite3.connect(source_path)
+target = sqlite3.connect(backup_path)
 with target:
     source.backup(target)
 target.close()
 source.close()
 PY
 ```
+
+Restore only while application instances are stopped. This replaces the configured SQLite database with the backup contents:
+
+```bash
+: "${SAFEPATH_SQLITE_BACKUP_PATH:?Set the path to the verified SQLite backup}"
+python - <<'PY'
+import os
+import sqlite3
+from pathlib import Path
+
+source_path = Path(os.environ["SAFEPATH_SQLITE_BACKUP_PATH"])
+target_path = Path(os.environ.get("SAFEPATH_DATABASE_PATH") or "db.sqlite3")
+if not source_path.is_file():
+    raise SystemExit(f"SQLite backup does not exist: {source_path}")
+
+source = sqlite3.connect(source_path)
+target = sqlite3.connect(target_path)
+with target:
+    source.backup(target)
+target.close()
+source.close()
+PY
+```
+
+After restoring, run `python manage.py migrate --check`, start one instance, and verify `/health/ready/`.
 
 ## Road data provider
 
@@ -231,6 +266,8 @@ SAFEPATH_OSM_API_URL='https://road-provider.example/api/interpreter'
 SAFEPATH_OSM_API_ALLOWED_HOSTS='road-provider.example'
 SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
 ```
+
+These are reserved example values. Replace them with the operator's approved provider URL and exact host.
 
 The public `overpass-api.de` endpoint is a development fallback only. It has no availability guarantee and must not be used as the production road-data backend. Production requests require the provider host to appear in the explicit production approval list and reject known public Overpass hosts. `scripts/check_production.py` enforces the same requirement. The URL must use HTTPS, the host must appear in the exact allowlist, redirects are rejected, and URL credentials and non-standard ports are rejected. Listing a production host asserts that the operator has a paid or self-hosted agreement for it.
 
@@ -275,7 +312,7 @@ Migrations require a reachable database. They must never run as part of `docker 
 
 The repository includes `render.yaml` for Render's native Python runtime. The Blueprint uses one Free web service in Singapore, Python 3.13.18, the `main` branch, `/health/` for platform health checks, one Gunicorn worker, and a 40 second shutdown allowance. It does not create a Render PostgreSQL database.
 
-Render's Free web service is an academic demonstration option, not a production deployment. It has one instance, an ephemeral filesystem, no pre-deploy command, and no shell. A service without inbound traffic can spin down after 15 minutes and can take about one minute to start again. The local geocoder cache is therefore disposable. Keep route and session data in external PostgreSQL.
+Render's Free web service is an academic demonstration option, not a production deployment. It has one instance, an ephemeral filesystem, no pre-deploy command, and no shell. A service without inbound traffic can spin down after 15 minutes and can take about one minute to start again. The local geocoder cache is therefore disposable. Keep session, admin, and framework state in external PostgreSQL.
 
 ### Required provider and database values
 
@@ -323,12 +360,21 @@ Neon may provide a direct endpoint and a pooled endpoint with a `-pooler` hostna
 7. Confirm the public hostname from the Render dashboard, then verify:
 
 ```bash
-curl -fsS "https://YOUR-HOSTNAME/health/"
-curl -fsS "https://YOUR-HOSTNAME/health/ready/"
-curl -I "https://YOUR-HOSTNAME/"
+BASE_URL='https://YOUR-HOSTNAME'
+
+curl -fsS "$BASE_URL/health/"
+curl -fsS "$BASE_URL/health/ready/"
+
+asset_path="$(
+  curl --fail --silent --show-error "$BASE_URL/" \
+    | grep -o '/static/[^"[:space:]]*\.css' \
+    | head -n 1
+)"
+test -n "$asset_path"
+curl --fail-with-body --silent --show-error "$BASE_URL$asset_path" --output /dev/null
 ```
 
-The first request must return `{"status":"ok"}`. The readiness request must return `{"status":"ready"}`. A static asset request must return HTTP 200 or 304 with its hashed manifest URL.
+The health requests must return `{"status":"ok"}` and `{"status":"ready"}`. The extracted stylesheet request must succeed and use the hashed manifest URL.
 
 ### Build, migration, and process behavior
 

@@ -1,5 +1,7 @@
 # Deployment Readiness
 
+This document records the deployment-hardening workstream separately from the project's earlier development phases listed in the README.
+
 ## Baseline
 
 Audit date: 2026-11-18
@@ -133,6 +135,8 @@ The deployment guide now covers local setup, production topology, Python 3.13, r
 `docs/EXTERNAL_SERVICES.md` records the operator service inventory, privacy boundary, credential classes, provider agreement requirements, attribution duties, failure behavior, and provider-change checklist. It also states that the bundled incident file remains unverified demonstration data with unknown licensing and redistribution permission.
 
 The documentation does not claim that a Render service, Neon database, CARTO account, paid road provider, or public deployment exists. Operator-managed backup and restore procedures use standard PostgreSQL and Python commands. The PostgreSQL dump, backup-list, and restore commands were exercised against a local PostgreSQL 16 container, and the SQLite backup command was exercised locally. No live production database was available for an end-to-end restore test.
+
+A follow-up literal runbook review found and corrected several documentation defects: the production commands no longer use a rejected CARTO placeholder, the restored database is passed explicitly to `migrate --check`, the provider check states its inherited secret requirements, SQLite backup and restore honor `SAFEPATH_DATABASE_PATH`, route persistence is described accurately, and static-asset and mocked-provider checks include runnable commands. The production checks, production static collection, custom-path SQLite backup and restore, restored-database migration check, and 53 mocked provider tests were rerun successfully. The production check used an existing non-placeholder CI test value only to verify command execution; it does not establish CARTO ownership or provider connectivity.
 
 ## Phase 12 final acceptance
 

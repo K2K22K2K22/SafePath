@@ -345,7 +345,9 @@ docs/
   DEPLOYMENT_READINESS.md     Verified checks, acceptance status, and blockers
 ```
 
-## Delivery phases
+## Historical delivery phases
+
+This table records the project's earlier development phases. The separate deployment-hardening workstream and its final acceptance evidence are recorded in [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md).
 
 | Phase | Result | Commit |
 | --- | --- | --- |
