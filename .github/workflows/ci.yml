@@ -82,6 +82,7 @@ jobs:
           DATABASE_URL: postgresql://safepath:safepath@127.0.0.1:5432/safepath?sslmode=require
           DJANGO_ALLOWED_HOSTS: safepath.example.com
           DJANGO_DEBUG: "False"
+          SAFEPATH_CARTO_API_KEY: pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9
           SAFEPATH_OSM_API_ALLOWED_HOSTS: road-provider.internal
           SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS: road-provider.internal
           SAFEPATH_OSM_API_URL: https://road-provider.internal/api/interpreter
@@ -116,6 +117,7 @@ jobs:
           trap 'rm -f .env' EXIT
           cp .env.example .env
           sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')|" .env
+          sed -i 's|^SAFEPATH_CARTO_API_KEY=.*|SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9|' .env
           sed -i 's/^PORT=.*/PORT=9000/' .env
           docker compose config --format json > /tmp/safepath-compose.json
           python - <<'PY'
@@ -128,6 +130,8 @@ jobs:
           assert django["ports"][0]["target"] == 9000
           assert django["ports"][0]["published"] == "9000"
           assert django["ports"][0]["host_ip"] == "127.0.0.1"
+          assert django["environment"]["SAFEPATH_CACHE_DIR"] == "/data/cache"
+          assert django["environment"]["SAFEPATH_CARTO_API_KEY"] == "pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9"
           assert django["environment"]["SAFEPATH_DATABASE_PATH"] == "/data/db.sqlite3"
           assert django["environment"]["SAFEPATH_RUN_MIGRATIONS"] == "true"
           assert django["environment"]["DJANGO_TRUST_X_FORWARDED_PROTO"] == "False"
@@ -147,6 +151,7 @@ jobs:
           export COMPOSE_PROJECT_NAME=safepath-ci
           cp .env.example .env
           sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')|" .env
+          sed -i 's|^SAFEPATH_CARTO_API_KEY=.*|SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9|' .env
           sed -i 's/^DJANGO_TRUST_X_FORWARDED_PROTO=.*/DJANGO_TRUST_X_FORWARDED_PROTO=True/' .env
           docker compose build
           docker volume create \
@@ -191,6 +196,12 @@ jobs:
           assert os.readlink("/proc/1/fd/1") == os.readlink("/proc/1/fd/2")
           legacy = os.stat("/data/legacy-root-owned")
           assert (legacy.st_uid, legacy.st_gid) == (10001, 10001)
+          cache_dir = Path(os.environ["SAFEPATH_CACHE_DIR"])
+          assert str(cache_dir) == "/data/cache"
+          cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+          cache_probe = cache_dir / "ci-write-probe"
+          cache_probe.write_text("ok", encoding="ascii")
+          cache_probe.unlink()
           PY
           test ! -e db.sqlite3
           docker compose exec -T django test -s /data/db.sqlite3
@@ -212,6 +223,7 @@ jobs:
             --stop-timeout 40 \
             --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9 \
             --env DJANGO_TRUST_X_FORWARDED_PROTO=True \
             --env SAFEPATH_RUN_MIGRATIONS=true \
             --publish 127.0.0.1:8000:8000 safepath-ci
@@ -261,12 +273,19 @@ jobs:
           command = Path("/proc/1/cmdline").read_bytes().split(b"\0")
           assert any(b"gunicorn" in part for part in command), command
           assert os.readlink("/proc/1/fd/1") == os.readlink("/proc/1/fd/2")
+          cache_dir = Path(os.environ["SAFEPATH_CACHE_DIR"])
+          assert str(cache_dir) == "/data/cache"
+          cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+          cache_probe = cache_dir / "ci-write-probe"
+          cache_probe.write_text("ok", encoding="ascii")
+          cache_probe.unlink()
           PY
 
           docker run --detach --name safepath-ci-no-migrations \
             --stop-timeout 40 \
             --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9 \
             --env DJANGO_TRUST_X_FORWARDED_PROTO=True \
             --env SAFEPATH_RUN_MIGRATIONS=false \
             safepath-ci
@@ -300,6 +319,7 @@ jobs:
             --stop-timeout 40 \
             --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9 \
             --env SAFEPATH_RUN_MIGRATIONS=false \
             safepath-ci
           test "$(docker inspect --format '{{.Config.StopTimeout}}' safepath-ci-trust-off)" = "40"
@@ -344,6 +364,7 @@ jobs:
           docker run --rm \
             --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9 \
             --env SAFEPATH_RUN_MIGRATIONS=invalid \
             safepath-ci
           invalid_mode_status=$?
@@ -354,6 +375,7 @@ jobs:
           docker run --rm \
             --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_CARTO_API_KEY=pk.eyJ1IjoiU0FGRVBBVEgtQ0lLUFJUQUZJQ1RPRCJ9 \
             --env SAFEPATH_RUN_MIGRATIONS=false \
             --env GUNICORN_GRACEFUL_TIMEOUT=30 \
             --env DOCKER_STOP_GRACE_PERIOD=30 \

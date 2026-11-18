@@ -23,6 +23,7 @@ flowchart LR
     OSM[Overpass-compatible road provider]
     Geo[Nominatim geocoder]
     CSV[Bundled incident CSV]
+    Cache[(File geocoder cache)]
     Tiles[OSM and CARTO tiles]
 
     User -->|HTTP| UI
@@ -34,6 +35,7 @@ flowchart LR
     Risk --> CSV
     OSM -->|Bounded read-only XML| Graph
     API -->|HTTPS, restricted host| Geo
+    API <--> Cache
     User -->|HTTPS map tiles| Tiles
 ```
 
@@ -43,7 +45,7 @@ The browser receives route geometry and metrics through relative API requests. I
 
 | Component | Source | Responsibility |
 | --- | --- | --- |
-| HTTP views | `Model/views.py` | Coordinate validation, API serialization, throttling, provider errors, health response |
+| HTTP views | `Model/views.py` | Coordinate validation, API serialization, throttling, geocoder cache and pacing, provider errors, health response |
 | Route service | `Model/utils/route_service.py` | Candidate generation, objective labels, diversity filtering, route metrics |
 | Search core | `Model/utils/routing.py` | Dijkstra, modified A*, path reconstruction, cost validation, exploration limits |
 | Graph builder | `Model/utils/osm_graph.py` | Bounded Overpass acquisition, XML limits, access rules, one-way handling, barriers, caching |
@@ -141,6 +143,12 @@ For each base path, temporary edge penalties discourage reuse of that path. Pena
 
 Interior-edge overlap is calculated after removing common start and end edges. An alternative is distinct only when its overlap ratio against every selected route is at most `0.75`. The service returns up to four routes. Fewer routes are returned when connected distinct paths do not exist.
 
+### 4.6 Geocoding acquisition
+
+The server validates and normalizes each place query with Unicode NFKC, collapsed whitespace, and case folding. It reads the normalized query from a separate bounded file cache. A cache hit returns immediately without consuming provider capacity. A miss reserves a shared file-lock slot before making an HTTPS request, so Gunicorn workers sharing one instance filesystem start no more than one uncached provider request per second.
+
+The provider request uses an identifying User-Agent, fixed result limit, finite connect and read timeouts, and no redirects. The response is capped at 64 KiB and must be a JSON list; each returned coordinate must be finite and in range. Successful results, including an empty list, are cached for 24 hours by default. Provider failures and malformed payloads are not cached. Cache read and write failures do not block a valid response. A request-lock failure returns HTTP 503 because pacing cannot be guaranteed. The cache directory is created with mode `0700` and must remain owned by the application user because the file cache deserializes local files.
+
 ## 5. Incident risk flow
 
 ```mermaid
@@ -218,11 +226,22 @@ If several objective paths have the same edge sequence, they become one route an
 sequenceDiagram
     participant B as Browser
     participant G as Geocode API
+    participant N as Nominatim provider
+    participant C as File geocoder cache
     participant R as Route API
     participant O as Road data provider
     participant D as Bundled CSV
 
     B->>G: GET /api/geocode/?q=...
+    G->>C: Read normalized query
+    alt Cached result
+        C-->>G: Valid results
+    else Cache miss
+        G->>G: Reserve shared one-second slot
+        G->>N: HTTPS place query
+        N-->>G: JSON results
+        G->>C: Cache successful result
+    end
     G-->>B: Valid location results
     B->>R: GET /api/routes/?start_lat=...
     R->>O: Bounded Overpass query
@@ -287,7 +306,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 | Browser to Django | Relative API paths, DRF parsing, coordinate validation, scoped throttling, exact production hosts, HTTPS redirect, secure cookies, no HTTP `Origin` enforcement |
 | Proxy to Django | Gunicorn forwarded-scheme handling disabled; explicit Django opt-in for `X-Forwarded-Proto`, only behind a proxy that replaces client-supplied headers |
 | Django to OSM | HTTPS host allowlist, explicit production provider approval, no redirects, stream byte limit, request limit, depth limit, UTF-8 and DTD or entity rejection |
-| Django to Nominatim | HTTPS host allowlist, no redirects, connect and read timeouts, response coordinate validation |
+| Django to Nominatim | HTTPS host allowlist, identifying User-Agent, no redirects, connect and read timeouts, 64 KiB response limit, response coordinate validation, shared one-second request pacing |
 | Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks |
 | Routing search | Finite edge values, non-negative beta, endpoint validation, bounded node exploration |
 | Browser map | Leaflet and Leaflet.heat pinned and vendored with licenses |
@@ -296,7 +315,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 
 ## 10. Caching and resource bounds
 
-OSM graphs are cached by normalized bounding-box key. Cache entries expire by TTL and the cache has a maximum entry count. Per-graph edge risk scores use a weak-key cache so scores do not outlive their graph unnecessarily.
+OSM graphs are cached by normalized bounding-box key. Cache entries expire by TTL and the cache has a maximum entry count. Per-graph edge risk scores use a weak-key cache so scores do not outlive their graph unnecessarily. Geocoder results use a separate file cache so workers sharing one instance filesystem reuse successful results without replacing the process-local DRF throttle cache.
 
 Default resource limits include:
 
@@ -307,10 +326,14 @@ Default resource limits include:
 - 3 bounding-box split levels
 - 8 XML nesting levels
 - 500,000 XML elements
-- 30 second aggregate road-data deadline
+- 30 second road-data acquisition deadline checked between response reads
 - 100,000 explored nodes per search
 - 8 cached graphs
 - 24 hour graph cache lifetime
+- 1,000 cached geocoder results
+- 24 hour geocoder cache lifetime
+- 64 KiB maximum geocoder response
+- One second minimum between uncached geocoder request starts within one instance
 
 The route API can execute multiple searches per request. Each search has its own exploration limit, while the overall OSM acquisition has shared request, byte, and time budgets.
 
@@ -323,6 +346,7 @@ flowchart TB
     Container --> Django[Gunicorn]
     Django --> Static[WhiteNoise static assets]
     Django -->|HTTPS road and location data| External[OSM and Nominatim]
+    Django <--> Cache[(Shared geocoder cache)]
     Django --> CSV[Bundled incident CSV]
     Container --> Database[(PostgreSQL or SQLite storage)]
 
@@ -339,7 +363,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container and binds the application to loopback for a local TLS proxy. `DATABASE_URL` selects PostgreSQL for deployed environments; SQLite uses the `safepath_data` named volume rather than the host checkout. Production mode requires an exact host allowlist, a strong secret, HTTPS redirects, secure cookies, and explicit trust for forwarded protocol only behind a controlled proxy. A production deployment still needs provider credentials and an appropriate secret-management process.
+The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container and binds the application to loopback for a local TLS proxy. `DATABASE_URL` selects PostgreSQL for deployed environments; SQLite and the geocoder cache use the `safepath_data` named volume rather than the host checkout. Production mode requires an exact host allowlist, a strong secret, HTTPS redirects, secure cookies, a customer-owned CARTO publishable key, and explicit trust for forwarded protocol only behind a controlled proxy. A production deployment still needs provider credentials and an appropriate secret-management process.
 
 ## 12. Test boundaries
 

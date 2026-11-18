@@ -3,7 +3,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 LOCAL_MAP_ASSETS = [
     "web/vendor/leaflet/leaflet.css",
@@ -32,6 +32,36 @@ class ApplicationSmokeTests(SimpleTestCase):
         self.assertIn("not a personal-safety assessment", content)
         self.assertNotIn("Throught ABC Block", content)
         self.assertNotIn("Walk: 24 min", content)
+
+    def test_home_page_displays_geocoder_attribution(self):
+        response = self.client.get("/", HTTP_HOST="localhost")
+
+        content = response.content.decode()
+        self.assertIn("Nominatim", content)
+        self.assertIn("OpenStreetMap", content)
+
+    @override_settings(SAFEPATH_CARTO_API_KEY="test-carto-key")
+    def test_home_page_exposes_customer_carto_key_as_json(self):
+        response = self.client.get("/", HTTP_HOST="localhost")
+
+        content = response.content.decode()
+        self.assertIn('id="carto-api-key"', content)
+        self.assertIn('"test-carto-key"', content)
+        self.assertIn('data-carto-key="configured"', content)
+
+    @override_settings(SAFEPATH_CARTO_API_KEY="")
+    def test_missing_carto_key_uses_filtered_osm_fallback(self):
+        response = self.client.get("/", HTTP_HOST="localhost")
+
+        self.assertIn('data-carto-key="missing"', response.content.decode())
+
+    def test_cross_origin_tile_requests_keep_a_referrer(self):
+        response = self.client.get("/", HTTP_HOST="localhost")
+
+        self.assertEqual(
+            response.headers["Referrer-Policy"],
+            "strict-origin-when-cross-origin",
+        )
 
     def test_health_endpoint_reports_ready(self):
         response = self.client.get("/health/", HTTP_HOST="localhost")

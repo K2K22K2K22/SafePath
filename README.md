@@ -24,6 +24,7 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 | Web application | Django 5.2 templates and native JavaScript |
 | HTTP API | Django REST Framework |
 | Road graph | Bounded Overpass-compatible OSM XML parsed into an in-memory directed graph |
+| Geocoding | Normalized server-side Nominatim proxy with bounded file cache and shared request pacing |
 | Routing | Custom Dijkstra, modified A*, and penalty-based alternative generation |
 | Risk model | Bundled CSV incidents scored against stored road-edge segments |
 | Map | Leaflet 1.9.4 and Leaflet.heat 0.2.0, both vendored locally |
@@ -54,7 +55,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-For local development, keep `DJANGO_DEBUG=True`. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and startup fails when either requirement is missing. Production route requests also require a paid or self-hosted Overpass-compatible provider whose exact host appears in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`.
+For local development, keep `DJANGO_DEBUG=True`. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. Without a CARTO key, local dark mode uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and `SAFEPATH_CARTO_API_KEY` must contain a customer-owned publishable key. Startup fails when any of these requirements is missing, and obvious CARTO placeholders are rejected. Production route requests also require a paid or self-hosted Overpass-compatible provider whose exact host appears in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`.
 
 Install frontend tooling and build the committed stylesheet:
 
@@ -76,15 +77,16 @@ Route requests do not require database rows. Standard Django migrations create t
 
 ## Docker
 
-Set a real secret in `.env`, then run:
+Set a real secret, customer-owned CARTO key, and approved road provider in `.env`, then run:
 
 ```bash
 cp .env.example .env
-# Replace DJANGO_SECRET_KEY in .env
+# Replace DJANGO_SECRET_KEY and SAFEPATH_CARTO_API_KEY in .env.
+# Approve the paid or self-hosted road provider host in .env.
 docker compose up --build
 ```
 
-The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy and route requests require a paid or self-hosted road-data provider explicitly approved in `.env`. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
+The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy, the dark basemap requires a domain-restricted CARTO key, and route requests require a paid or self-hosted road-data provider explicitly approved in `.env`. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data and the geocoder cache stay in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -109,8 +111,12 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix only; must exceed Gunicorn's graceful timeout |
 | `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
 | `SAFEPATH_RUN_MIGRATIONS` | `false` in the image | Run migrations before Gunicorn when set to `true` |
+| `SAFEPATH_CACHE_DIR` | `/tmp/safepath-cache` | Private geocoder cache and request-lock directory; must be owned by the application user with mode `0700`; Compose uses `/data/cache` |
+| `SAFEPATH_CARTO_API_KEY` | unset | Required production CARTO publishable key; domain-restrict it and keep visible browser attribution |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
 | `SAFEPATH_GEOCODER_ALLOWED_HOSTS` | `nominatim.openstreetmap.org` | HTTPS hosts allowed for geocoding |
+| `SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES` | `1000` | Maximum cached geocoder results |
+| `SAFEPATH_GEOCODER_CACHE_TTL_SECONDS` | `86400` | Geocoder cache lifetime in seconds |
 | `SAFEPATH_ROUTE_THROTTLE_RATE` | `20/minute` | Route API request limit |
 | `SAFEPATH_GEOCODE_THROTTLE_RATE` | `30/minute` | Geocoding API request limit |
 | `SAFEPATH_HEATMAP_THROTTLE_RATE` | `60/minute` | Heatmap API request limit |
@@ -167,7 +173,7 @@ A single route can carry multiple labels when it wins more than one objective. T
 GET /api/geocode/?q=Connaught%20Place%20Delhi
 ```
 
-The proxy validates the query length, restricts the provider to configured HTTPS hosts, rejects redirects, applies a timeout, and returns only finite, valid coordinates.
+The proxy validates the query length, restricts the provider to configured HTTPS hosts, rejects redirects, applies a timeout, and returns only finite, valid coordinates. It uses an identifying User-Agent, visible provider attribution, and browser autocomplete suppression. Normalized successful results are cached in a bounded file cache. A shared file lock limits uncached provider requests to one per second across workers in one instance; multiple instances need external coordination.
 
 ### Incident heatmap
 
@@ -251,6 +257,7 @@ The bundled file currently contains 225 raw rows and 193 valid unique incident r
 - Loading, empty, error, and unknown-coverage states are explicit.
 - The heatmap uses bundled incident points and starts disabled.
 - Theme changes persist in local storage and replace only the tile layer. Route selection and heatmap state remain intact.
+- Light tiles use the canonical OpenStreetMap raster endpoint. Dark tiles use CARTO raster tiles when a customer-owned publishable key is configured; local development without a key uses filtered OpenStreetMap tiles. OpenStreetMap, Nominatim, and CARTO attribution remain visible.
 - The layout is usable down to 320 CSS pixels without horizontal page overflow.
 
 ## Testing and quality gates
@@ -281,7 +288,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 111 Django tests passed
+- 137 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed for 35 source files
@@ -291,7 +298,7 @@ Current local result:
 
 The full npm development-tool audit currently reports two high-severity findings in Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They affect local build tooling only. `npm audit --omit=dev` reports zero vulnerabilities, and no patched upstream `picomatch` release is currently available.
 
-GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. The local Docker daemon was unavailable in the delivery environment, so the image build is covered by CI rather than a local Docker result.
+GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. A fresh Podman image build and runtime passed locally. The native Docker daemon was unavailable in the delivery environment, so native Docker and remote CI remain required evidence.
 
 ## Project map
 

@@ -19,6 +19,7 @@ from scripts.healthcheck import build_headers, is_valid_health_response, main
 from scripts.verify_static_assets import fetch
 
 VALID_SECRET = secrets.token_urlsafe(64)
+VALID_CARTO_KEY = "pk.eyJ1IjoiU0FGRVBBVEgtUFVCTElDSEVTRUtFWQifQ"
 
 
 class ProductionCheckTests(SimpleTestCase):
@@ -49,6 +50,7 @@ class ProductionCheckTests(SimpleTestCase):
                 "DJANGO_DEBUG": "False",
                 "DJANGO_SECRET_KEY": VALID_SECRET,
                 "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_CARTO_API_KEY": VALID_CARTO_KEY,
                 "SAFEPATH_OSM_API_URL": "https://overpass-api.de/api/interpreter",
                 "SAFEPATH_OSM_API_ALLOWED_HOSTS": "overpass-api.de",
                 "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "overpass-api.de",
@@ -76,6 +78,7 @@ class ProductionCheckTests(SimpleTestCase):
                 "DJANGO_DEBUG": "False",
                 "DJANGO_SECRET_KEY": VALID_SECRET,
                 "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_CARTO_API_KEY": VALID_CARTO_KEY,
                 "SAFEPATH_OSM_API_URL": (
                     "https://road-provider.internal/api/interpreter"
                 ),
@@ -97,6 +100,68 @@ class ProductionCheckTests(SimpleTestCase):
         self.assertIn("explicitly approved", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_requires_customer_carto_key(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.pop("SAFEPATH_CARTO_API_KEY", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_OSM_API_URL": (
+                    "https://road-provider.internal/api/interpreter"
+                ),
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "road-provider.internal",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "road-provider.internal",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("CARTO", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_rejects_placeholder_carto_key(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_OSM_API_URL": (
+                    "https://road-provider.internal/api/interpreter"
+                ),
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "road-provider.internal",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "road-provider.internal",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        for carto_key in ("replace-with-carto-key", "build-only-carto-key"):
+            with self.subTest(carto_key=carto_key):
+                environment["SAFEPATH_CARTO_API_KEY"] = carto_key
+                result = subprocess.run(
+                    [sys.executable, str(script)],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("placeholder", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_accepts_explicitly_approved_private_road_data_provider(self):
         environment = os.environ.copy()
         environment.update(
@@ -108,6 +173,7 @@ class ProductionCheckTests(SimpleTestCase):
                 "DJANGO_DEBUG": "False",
                 "DJANGO_SECRET_KEY": VALID_SECRET,
                 "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_CARTO_API_KEY": VALID_CARTO_KEY,
                 "SAFEPATH_OSM_API_URL": (
                     "https://road-provider.internal/api/interpreter"
                 ),
@@ -165,6 +231,7 @@ class GunicornConfigurationTests(SimpleTestCase):
 
 class ProductionStaticAssetSettingsTests(SimpleTestCase):
     def load_settings(self, environment):
+        environment.setdefault("SAFEPATH_CARTO_API_KEY", VALID_CARTO_KEY)
         settings_path = Path(settings.BASE_DIR) / "safepath_backend" / "settings.py"
         with patch.dict(os.environ, environment, clear=True):
             return runpy.run_path(str(settings_path))
@@ -196,6 +263,7 @@ class ProductionStaticAssetSettingsTests(SimpleTestCase):
 
 class ProductionSecuritySettingsTests(SimpleTestCase):
     def load_settings(self, environment):
+        environment.setdefault("SAFEPATH_CARTO_API_KEY", VALID_CARTO_KEY)
         settings_path = Path(settings.BASE_DIR) / "safepath_backend" / "settings.py"
         with patch.dict(os.environ, environment, clear=True):
             return runpy.run_path(str(settings_path))
@@ -330,6 +398,59 @@ class ProductionSecuritySettingsTests(SimpleTestCase):
                         }
                     )
 
+    def test_configures_separate_bounded_geocoder_cache(self):
+        with tempfile.TemporaryDirectory() as cache_directory:
+            config = self.load_settings(
+                {
+                    "DJANGO_DEBUG": "True",
+                    "SAFEPATH_CACHE_DIR": cache_directory,
+                    "SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES": "25",
+                    "SAFEPATH_GEOCODER_CACHE_TTL_SECONDS": "60",
+                }
+            )
+
+        self.assertIn("locmem.LocMemCache", config["CACHES"]["default"]["BACKEND"])
+        self.assertIn(
+            "filebased.FileBasedCache", config["CACHES"]["geocoder"]["BACKEND"]
+        )
+        self.assertEqual(
+            config["CACHES"]["geocoder"]["LOCATION"],
+            str(Path(cache_directory).resolve()),
+        )
+        self.assertEqual(config["CACHES"]["geocoder"]["MAX_ENTRIES"], 25)
+        self.assertEqual(config["SAFEPATH_GEOCODER_CACHE_TTL_SECONDS"], 60)
+
+    def test_rejects_public_geocoder_cache_directory(self):
+        with tempfile.TemporaryDirectory() as cache_directory:
+            os.chmod(cache_directory, 0o755)
+            with self.assertRaisesRegex(
+                ImproperlyConfigured,
+                "SAFEPATH_CACHE_DIR must be a private directory",
+            ):
+                self.load_settings(
+                    {
+                        "DJANGO_DEBUG": "True",
+                        "SAFEPATH_CACHE_DIR": cache_directory,
+                    }
+                )
+
+    def test_rejects_symlinked_geocoder_cache_directory(self):
+        with tempfile.TemporaryDirectory() as parent_directory:
+            target = Path(parent_directory) / "target"
+            target.mkdir(mode=0o700)
+            cache_directory = Path(parent_directory) / "cache"
+            cache_directory.symlink_to(target, target_is_directory=True)
+            with self.assertRaisesRegex(
+                ImproperlyConfigured,
+                "SAFEPATH_CACHE_DIR must be a private directory",
+            ):
+                self.load_settings(
+                    {
+                        "DJANGO_DEBUG": "True",
+                        "SAFEPATH_CACHE_DIR": str(cache_directory),
+                    }
+                )
+
     def test_debug_keeps_local_hosts_and_non_secure_cookies(self):
         config = self.load_settings({"DJANGO_DEBUG": "True"})
 
@@ -367,6 +488,7 @@ class ProductionRequestSecurityTests(SimpleTestCase):
 
 class DatabaseSettingsTests(SimpleTestCase):
     def load_settings(self, environment):
+        environment.setdefault("SAFEPATH_CARTO_API_KEY", VALID_CARTO_KEY)
         settings_path = Path(settings.BASE_DIR) / "safepath_backend" / "settings.py"
         with patch.dict(os.environ, environment, clear=True):
             return runpy.run_path(str(settings_path))

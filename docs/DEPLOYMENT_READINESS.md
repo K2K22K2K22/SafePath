@@ -62,6 +62,12 @@ Production settings now require a strong secret and exact host names, redirect H
 
 The road loader now sends fixed, bounded Overpass QL for drivable road classes to an explicitly configured HTTPS host instead of calling the OpenStreetMap editing or Map API. Public Overpass remains a low-volume development fallback only. Production route requests require an exact host in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`, and the production check script enforces the same rule. Known public providers remain rejected even when listed. Canonical host comparison, UTF-8-only XML, explicit oversized-error splitting, and the existing area, request, byte, deadline, split, XML, and graph limits remain active. Provider requests are serialized within one process. `docs/DATA_PROVIDERS.md` records configuration, limits, caching, licensing, attribution, failure behavior, and the multi-instance constraint. The Phase 5 local matrix passed 111 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. A fresh Podman image build and runtime verified the provider configuration, migrations, health probe, and graceful stop. Live requests to two public Overpass instances timed out from this environment, so public provider response availability remains unverified.
 
+## Phase 6 geocoding and map tiles
+
+The geocoder now uses an identifying User-Agent, visible Nominatim and OpenStreetMap attribution, browser autocomplete suppression, normalized queries, successful-result caching, and a shared file lock that limits uncached provider request starts to one per second across Gunicorn workers sharing one instance filesystem. Provider responses are capped at 64 KiB. Malformed, oversized, and invalid-only payloads are rejected and not cached. The cache directory must be an application-owned real directory with mode `0700`; public and symlinked directories fail startup because the file cache deserializes local files. Cache failures do not block valid searches, while request-lock failures and invalid lock state return HTTP 503 because pacing cannot be guaranteed. The default DRF cache remains process-local for throttling; geocoder results use a separate bounded file cache.
+
+The browser uses the canonical OpenStreetMap standard raster endpoint for the light theme and CARTO's current raster basemap endpoint for the dark theme when a customer-owned, domain-restricted CARTO publishable key is configured. Production rejects obvious placeholder keys. Local development without a key uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. The key remains visible in browser requests and is never proxied through the application. The Phase 6 local matrix passed 137 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Compose configuration and a fresh Podman image runtime also passed. Public Nominatim has no availability guarantee, and separate application instances do not share the local pacing lock.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
@@ -154,7 +160,7 @@ Deployment readiness will require all of the following:
 - Gunicorn is the production process and `runserver` is absent from production startup paths.
 - WhiteNoise serves all required CSS, JavaScript, Leaflet, heatmap, marker, and favicon assets.
 - SQLite remains the development fallback and PostgreSQL passes migrations and tests in CI.
-- Production startup fails closed without a strong secret, explicit hosts, and required HTTPS settings.
+- Production startup fails closed without a strong secret, explicit hosts, required HTTPS settings, and a customer-owned CARTO key.
 - `manage.py check --deploy` has no unaddressed applicable warnings.
 - Road and geocoding providers have documented policies, limits, caching, attribution, and failure behavior.
 - Incident provenance and coverage limitations are visible in the interface and documentation.
@@ -166,9 +172,10 @@ Deployment readiness will require all of the following:
 ## Remaining risks
 
 - Public or hosted providers can throttle, reject, or become unavailable even when application safeguards work as designed.
+- The production CARTO key must be customer-owned and domain-restricted before deployment.
 - The incident dataset cannot currently be treated as verified crime data.
 - Bounding-box-derived coverage cannot establish complete road coverage.
 - Turn restrictions remain unsupported unless a selected provider and a correct route-search implementation make them feasible.
-- A single-process global geocoder limiter does not coordinate multiple application instances. A shared limiter is required if the deployment scales beyond one instance.
+- The file-based geocoder limiter and cache coordinate workers only within one application instance. Multiple instances need external coordination or a self-hosted provider when using public Nominatim.
 - A free hosted database may expire. An external PostgreSQL provider with an explicit retention policy is required for a durable demo.
 - HSTS should remain disabled until the deployed hostname and HTTPS redirect path have been verified.

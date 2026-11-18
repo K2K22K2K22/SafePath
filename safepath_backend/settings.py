@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 import secrets
+import stat
 from pathlib import Path
 from urllib.parse import urlparse, urlsplit
 
@@ -111,7 +112,7 @@ SECURE_PROXY_SSL_HEADER = (
     ("HTTP_X_FORWARDED_PROTO", "https") if trust_forwarded_proto else None
 )
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "same-origin"
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 try:
@@ -304,6 +305,80 @@ REST_FRAMEWORK = {
     },
 }
 
+
+def _private_cache_directory():
+    path = Path(
+        os.environ.get("SAFEPATH_CACHE_DIR", "/tmp/safepath-cache")
+    ).expanduser()
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path_info = path.lstat()
+    except OSError as error:
+        raise ImproperlyConfigured(
+            "SAFEPATH_CACHE_DIR must be a private directory owned by the application user."
+        ) from error
+    if (
+        not stat.S_ISDIR(path_info.st_mode)
+        or path_info.st_uid != os.geteuid()
+        or stat.S_IMODE(path_info.st_mode) != 0o700
+    ):
+        raise ImproperlyConfigured(
+            "SAFEPATH_CACHE_DIR must be a private directory owned by the application user."
+        )
+    return path.resolve()
+
+
+SAFEPATH_CACHE_DIR = _private_cache_directory()
+SAFEPATH_CARTO_API_KEY = os.environ.get("SAFEPATH_CARTO_API_KEY", "").strip()
+if SAFEPATH_PRODUCTION_MODE and not SAFEPATH_CARTO_API_KEY:
+    raise ImproperlyConfigured(
+        "SAFEPATH_CARTO_API_KEY must be set when DJANGO_DEBUG is false."
+    )
+if any(character.isspace() for character in SAFEPATH_CARTO_API_KEY):
+    raise ImproperlyConfigured("SAFEPATH_CARTO_API_KEY must not contain whitespace.")
+carto_key_markers = (
+    "replace-with",
+    "replace_with",
+    "replace-me",
+    "build-only",
+    "changeme",
+    "placeholder",
+    "your-key",
+    "your_key",
+)
+carto_placeholder_values = {"customer-publishable-key", "test-carto-key"}
+if not DEBUG and (
+    any(marker in SAFEPATH_CARTO_API_KEY.lower() for marker in carto_key_markers)
+    or SAFEPATH_CARTO_API_KEY.lower() in carto_placeholder_values
+):
+    raise ImproperlyConfigured(
+        "SAFEPATH_CARTO_API_KEY must be a customer-owned publishable key, "
+        "not a placeholder."
+    )
+try:
+    SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES = int(
+        os.environ.get("SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES", "1000")
+    )
+    SAFEPATH_GEOCODER_CACHE_TTL_SECONDS = int(
+        os.environ.get("SAFEPATH_GEOCODER_CACHE_TTL_SECONDS", "86400")
+    )
+except ValueError as error:
+    raise ImproperlyConfigured("Geocoder cache limits must be integers.") from error
+if SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES <= 0:
+    raise ImproperlyConfigured("SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES must be positive.")
+if SAFEPATH_GEOCODER_CACHE_TTL_SECONDS <= 0:
+    raise ImproperlyConfigured("SAFEPATH_GEOCODER_CACHE_TTL_SECONDS must be positive.")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "safepath-default",
+    },
+    "geocoder": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(SAFEPATH_CACHE_DIR),
+        "MAX_ENTRIES": SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES,
+    },
+}
 SAFEPATH_GEOCODER_ALLOWED_HOSTS = tuple(
     host.strip()
     for host in os.environ.get(

@@ -11,6 +11,7 @@ SAFE PATH runs under Gunicorn in the production container. The configuration rea
 | `GUNICORN_TIMEOUT` | `60` | Worker request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Graceful shutdown timeout in seconds |
 | `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix only; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
+| `SAFEPATH_CACHE_DIR` | `/data/cache` in the image | Private geocoder cache and request-lock directory; must be owned by the application user with mode `0700` |
 
 Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when the platform sends a termination signal. The container redirects standard error to standard output before migrations and Gunicorn start, so all container process logs use one stream. Startup fails with exit code 64 unless the Gunicorn grace is integer seconds, the Docker stop grace uses the same integer-second format with an `s` suffix, and the Docker stop grace is greater than the Gunicorn graceful timeout. Docker must therefore allow more time than Gunicorn's graceful timeout or it can terminate workers before graceful shutdown finishes.
 
@@ -36,6 +37,7 @@ Run the production checks with the same environment used by the deployment:
 DJANGO_DEBUG=False \
 DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
 SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
 SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
 SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
@@ -43,6 +45,7 @@ python manage.py check --deploy
 DJANGO_DEBUG=False \
 DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
 SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
 SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
 SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
@@ -59,6 +62,7 @@ Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and co
 DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_DEBUG=False \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+SAFEPATH_CARTO_API_KEY="pk.REPLACE_WITH_REAL_CARTO_KEY" \
 python manage.py collectstatic --noinput --clear --ignore "web/css/src/*"
 ```
 
@@ -92,6 +96,14 @@ The public `overpass-api.de` endpoint is a development fallback only. It has no 
 
 Each request uses fixed bounded Overpass QL. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, aggregate XML elements, graph edges, and the acquisition deadline checked between response reads. Provider requests are serialized within one process, and graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
 
+## Geocoding and map tiles
+
+The geocoder uses a dedicated file-based cache under `SAFEPATH_CACHE_DIR`. In the container this is `/data/cache`, inside the persistent `safepath_data` volume. The application creates the directory with mode `0700` and rejects a public directory or symlink at startup because the cache backend deserializes local files. Gunicorn workers sharing that directory coordinate uncached requests through a file lock and start no more than one provider request per second. Provider responses are capped at 64 KiB. Cache hits do not consume provider capacity. Keep the deployment at one instance when using public Nominatim; separate instances do not share the lock and need external coordination or a self-hosted provider.
+
+Production requires `SAFEPATH_CARTO_API_KEY`. Use a customer-owned, domain-restricted publishable key. Startup rejects obvious placeholder values. The value is sent directly from the browser to CARTO and is visible by design, so it is not a server secret and must not be stored as one. Do not proxy CARTO tiles through the application. Keep the visible Nominatim, OpenStreetMap, and CARTO attribution intact. Local development without a CARTO key uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile.
+
+The application cannot verify provider plans, quotas, licenses, or availability. Review [DATA_PROVIDERS.md](DATA_PROVIDERS.md) before deploying with public providers.
+
 ## Migration modes
 
 Choose one mode for each deployment:
@@ -111,11 +123,12 @@ Prepare the environment and start the single-instance Compose service:
 
 ```bash
 cp .env.example .env
-# Set a strong DJANGO_SECRET_KEY in .env
+# Set a strong DJANGO_SECRET_KEY and a domain-restricted SAFEPATH_CARTO_API_KEY in .env
+# Set the paid or self-hosted road provider approval in .env
 docker compose up --build
 ```
 
-Compose starts Gunicorn on `PORT` (default `8000`), binds it to `127.0.0.1`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change. The container health probe sends the first configured production host instead of an implicit loopback host. Compose uses production security settings, so route requests also require a paid or self-hosted road-data provider explicitly approved in `.env`.
+Compose starts Gunicorn on `PORT` (default `8000`), binds it to `127.0.0.1`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite and the geocoder cache in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change. The container health probe sends the first configured production host instead of an implicit loopback host. Compose uses production security settings, so route requests require a paid or self-hosted road-data provider explicitly approved in `.env`, and the dark basemap requires a customer-owned CARTO key.
 
 Check the service:
 
@@ -149,6 +162,7 @@ docker run --rm --publish "127.0.0.1:${PORT:-8000}:${PORT:-8000}" \
   --env DJANGO_DEBUG=False \
   --env DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1" \
   --env DJANGO_TRUST_X_FORWARDED_PROTO=False \
+  --env SAFEPATH_CACHE_DIR=/data/cache \
   --env SAFEPATH_DATABASE_PATH=/data/db.sqlite3 \
   --env SAFEPATH_RUN_MIGRATIONS=true \
   --env GUNICORN_GRACEFUL_TIMEOUT=30 \

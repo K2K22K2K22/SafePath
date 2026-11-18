@@ -84,7 +84,7 @@ test("switches map tiles without losing route selection", async ({ page }) => {
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
   await expect(page.locator(".leaflet-tile-pane img").first()).toHaveAttribute(
     "src",
-    /dark_all/,
+    /basemaps\.cartocdn\.com\/rastertiles\/dark_all\/\d+\/\d+\/\d+\.png\?key=test-carto-key/,
   );
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("safepath-theme")))

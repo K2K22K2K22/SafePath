@@ -23,7 +23,17 @@ def main():
     except ImproperlyConfigured as error:
         print(f"Production configuration error: {error}", file=sys.stderr)
         return 2
+    from django.conf import settings
+
     from Model.utils.osm_graph import RoadDataUnavailable, _validated_osm_url
+
+    if not settings.SAFEPATH_CARTO_API_KEY:
+        print(
+            "Production configuration error: SAFEPATH_CARTO_API_KEY must be set "
+            "to a customer-owned CARTO basemap key.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         _validated_osm_url(require_private=True)

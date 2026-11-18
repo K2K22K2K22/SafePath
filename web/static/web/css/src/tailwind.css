@@ -44,6 +44,10 @@
   color-scheme: dark;
 }
 
+[data-theme="dark"][data-carto-key="missing"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+}
+
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);

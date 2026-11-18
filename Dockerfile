@@ -3,6 +3,7 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
+    SAFEPATH_CACHE_DIR=/data/cache \
     SAFEPATH_DATABASE_PATH=/data/db.sqlite3 \
     SAFEPATH_RUN_MIGRATIONS=false
 
@@ -28,7 +29,11 @@ RUN chmod 755 /app/docker/entrypoint.sh \
     && DJANGO_DEBUG=False \
        DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
        DJANGO_ALLOWED_HOSTS=localhost \
-       python manage.py collectstatic --noinput --ignore "web/css/src/*"
+       SAFEPATH_CARTO_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+       python manage.py collectstatic --noinput --ignore "web/css/src/*" \
+    && mkdir -p /data/cache \
+    && chown safepath:safepath /data/cache \
+    && chmod 700 /data/cache
 
 USER safepath
 EXPOSE 8000

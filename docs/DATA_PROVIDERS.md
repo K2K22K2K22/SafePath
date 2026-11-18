@@ -55,8 +55,32 @@ OpenStreetMap data is available under the Open Database License. The map interfa
 
 ## Geocoding
 
-Geocoding policy, request pacing, caching, and attribution are recorded with the geocoder implementation.
+The server proxies place search to the configured Nominatim-compatible HTTPS endpoint. The default is the public `https://nominatim.openstreetmap.org/search` endpoint. Public Nominatim has donated infrastructure and no availability guarantee, so a deployed environment must confirm that its expected traffic is allowed or use a self-hosted service covered by the operator's plan. See the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
+
+The public service requires no more than one request per second, an identifying User-Agent, visible attribution, caching, and no autocomplete. SAFE PATH enforces the request interval with a shared file lock across Gunicorn workers in one application instance. A cache hit does not consume provider capacity. The lock coordinates workers only when they share the same `SAFEPATH_CACHE_DIR`; multiple application instances require external shared coordination or a provider-side limit.
+
+Geocoder queries are normalized with Unicode NFKC, collapsed whitespace, and case folding before use. Cache keys are SHA-256 digests of the normalized query and provider URL. Successful empty results are cached. Provider failures and malformed payloads are not cached. The file-based cache holds at most 1,000 entries for 24 hours by default, configurable with `SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES` and `SAFEPATH_GEOCODER_CACHE_TTL_SECONDS`. The cache directory must be owned by the application user with mode `0700`; startup rejects a public or symlinked directory because Django's file cache deserializes local files. Cache read and write failures do not block a valid provider response. A request-lock failure returns HTTP 503 because provider pacing cannot be guaranteed.
+
+Every provider request uses the identifying `SAFEPATH_HTTP_USER_AGENT`, rejects redirects, applies finite connect and read timeouts, limits the response to 64 KiB, requires a JSON list, validates returned coordinates, and returns a generic service-unavailable response without exposing upstream details. A non-empty list with no valid coordinate is treated as malformed and is not cached. The browser input disables autocomplete. The page visibly credits Nominatim and OpenStreetMap contributors.
 
 ## Map tiles
 
-The browser loads OpenStreetMap standard tiles and CARTO dark tiles directly. A deployed environment must use tile services covered by the operator's plan and keep the visible attribution intact.
+The browser loads map tiles directly. The light theme uses the canonical OpenStreetMap standard raster endpoint:
+
+```text
+https://tile.openstreetmap.org/{z}/{x}/{y}.png
+```
+
+The dark theme uses CARTO's current raster basemap endpoint when a publishable key is configured:
+
+```text
+https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=...
+```
+
+OpenStreetMap standard tiles are best-effort and have no service-level guarantee. Their policy prohibits heavy or inappropriate use and requires valid attribution. The application keeps the OpenStreetMap attribution visible and uses a referrer policy that preserves the page origin on cross-origin tile requests. A deployment that cannot meet the tile policy must use an approved alternative provider.
+
+CARTO basemap access requires a customer-owned publishable key. Production startup requires `SAFEPATH_CARTO_API_KEY` and rejects obvious placeholder values. The key is domain-restricted, visible in browser requests, and is not a confidential server secret. It must not be proxied through the application or restricted as a server-side secret. The page keeps the CARTO and OpenStreetMap attribution visible. See the [CARTO basemap FAQ](https://docs.carto.com/faqs/carto-basemaps/) and [CARTO attribution guidance](https://carto.com/attribution/).
+
+Without a key, local development uses the OpenStreetMap raster tiles with a dark-theme filter. It does not request CARTO without a usable key. Production still requires CARTO for the configured dark basemap.
+
+The operator remains responsible for provider plans, quotas, key restrictions, licensing, and availability.

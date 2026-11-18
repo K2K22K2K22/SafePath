@@ -2,16 +2,21 @@ const ROUTES_URL = "/api/routes/";
 const GEOCODE_URL = "/api/geocode/";
 const HEATMAP_URL = "/api/safety-heatmap/";
 const ROUTE_COLORS = ["#087f5b", "#2563eb", "#7c3aed", "#ea580c"];
+const CARTO_API_KEY = JSON.parse(
+    document.getElementById("carto-api-key")?.textContent || '""',
+);
+const OSM_TILE_CONFIG = {
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+};
 const TILE_CONFIG = {
-    light: {
-        url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    },
-    dark: {
-        url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: "abcd",
-    },
+    light: OSM_TILE_CONFIG,
+    dark: CARTO_API_KEY
+        ? {
+              url: `https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${encodeURIComponent(CARTO_API_KEY)}`,
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attribution/">CARTO</a>',
+          }
+        : OSM_TILE_CONFIG,
 };
 const DEFAULT_START = { lat: 28.474780644693578, lon: 77.47638190820159 };
 

@@ -19,6 +19,7 @@ module.exports = defineConfig({
     env: {
       DATABASE_URL: "",
       DJANGO_DEBUG: "True",
+      SAFEPATH_CARTO_API_KEY: "test-carto-key",
       SAFEPATH_DATABASE_PATH: "/tmp/safepath-e2e.sqlite3",
     },
     reuseExistingServer: !process.env.CI,
