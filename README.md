@@ -1,15 +1,15 @@
 # SAFE PATH
 
-SAFE PATH is a Django navigation application that compares routes over a real directed road graph. It combines shortest-path search, safety-weighted path search, and deterministic incident-proximity scoring so users can inspect distance, estimated travel time, observed risk, and route differences.
+SAFE PATH is a Django navigation application that compares routes over a real directed road graph. It combines shortest-path search, safety-weighted path search, and deterministic incident-proximity scoring so users can inspect distance, estimated travel time, incident-record proximity risk, and route differences.
 
 The application does not use an LLM, deep learning, FDL, or an external AI provider. Route geometry, distances, risk values, and route labels are computed from source data.
 
 ## Highlights
 
-- Real OpenStreetMap road graph with directed edges, one-way rules, access restrictions, node barriers, and retained way geometry
+- Real OpenStreetMap road graph with directed edges, one-way rules, access restrictions, node barriers, and consecutive-node edge segments
 - Custom Dijkstra and modified A* implementations with bounded searches and admissible distance heuristics
 - Up to four unique routes, including shortest, safest when data coverage supports it, balanced, and genuinely distinct alternatives
-- Deterministic risk scoring from bundled incident records, with unknown safety outside dataset coverage
+- Deterministic risk scoring from bundled incident records, with unknown safety when a route is not fully covered
 - Route cards, side-by-side comparison, distinct map colors, and route selection
 - Optional Leaflet heatmap generated from the same validated incident records used by route scoring
 - Persisted light and dark application themes with matching map tile layers
@@ -25,7 +25,7 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 | HTTP API | Django REST Framework |
 | Road graph | OSM XML snapshots parsed into an in-memory directed graph |
 | Routing | Custom Dijkstra, modified A*, and penalty-based alternative generation |
-| Risk model | Bundled CSV incidents scored against complete road-edge geometry |
+| Risk model | Bundled CSV incidents scored against stored road-edge segments |
 | Map | Leaflet 1.9.4 and Leaflet.heat 0.2.0, both vendored locally |
 | Styling | Tailwind CSS 4.1.18 with committed generated CSS |
 | Django storage | SQLite for framework features such as sessions and admin |
@@ -45,10 +45,9 @@ Python 3.13 is the supported runtime used by the Docker image and CI. Some pinne
 
 ## Local setup
 
-```bash
-git clone https://github.com/LilSuperUser/SafePath.git
-cd SafePath
+Run these commands from a checkout containing the current implementation:
 
+```bash
 python3.13 -m venv venv
 source venv/bin/activate
 pip install -r requirements-dev.txt
@@ -64,15 +63,16 @@ npm ci
 npm run build:css
 ```
 
-Run Django:
+Apply standard Django migrations and run the server:
 
 ```bash
+DJANGO_DEBUG=True venv/bin/python manage.py migrate
 DJANGO_DEBUG=True venv/bin/python manage.py runserver
 ```
 
 Open <http://127.0.0.1:8000>.
 
-The application does not need a custom database migration for route requests. Django's built-in admin remains available at `/admin/`, but SAFE PATH does not provide product accounts, user profiles, or user incident reporting.
+Route requests do not require database rows. Standard Django migrations create the framework tables used by sessions and admin. Django's built-in admin remains available at `/admin/`, but SAFE PATH does not provide product accounts, user profiles, or user incident reporting.
 
 ## Docker
 
@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes port `8000`, serves the vendored static assets through Django's development server, and defines a health check against `/health/`. Compose mounts the working tree. It is suitable for local evaluation, not a hardened production deployment.
+The container exposes port `8000`, applies standard Django migrations at startup, serves the vendored static assets through Django's development server, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container and mounts the working tree. It is suitable for local evaluation, not a hardened production deployment.
 
 ## Configuration
 
@@ -95,7 +95,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
 | `DJANGO_SECRET_KEY` | unset | Required when debug mode is off |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Accepted deployment hosts; loopback hosts are always retained for health checks |
-| `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Same-origin geocoding proxy target |
+| `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
 | `SAFEPATH_GEOCODER_ALLOWED_HOSTS` | `nominatim.openstreetmap.org` | HTTPS hosts allowed for geocoding |
 | `SAFEPATH_ROUTE_THROTTLE_RATE` | `20/minute` | Route API request limit |
 | `SAFEPATH_GEOCODE_THROTTLE_RATE` | `30/minute` | Geocoding API request limit |
@@ -113,7 +113,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 
 ## HTTP API
 
-All API endpoints are same-origin and accept `GET` requests.
+All API endpoints accept `GET` requests. Browser code calls relative, same-origin URLs, but the server does not enforce HTTP `Origin` headers.
 
 ### Route options
 
@@ -129,15 +129,18 @@ A successful response contains:
 - `incident_data`: the bundled incident source
 - `original_route`: geometry of the shortest route
 - `safe_path`: geometry of the safest route, or the shortest route when no supported `safest` label exists
+- `distance_meters`, `avg_risk`, `nodes`, and `segments`: compatibility summary fields for the shortest route
+
+Each route also includes `type` and `duration_source`.
 
 Route labels are emitted only for supported model roles:
 
 - `shortest`: minimum road-edge distance in the loaded graph
-- `safest`: lowest observed risk among fully covered generated candidates
+- `safest`: lowest computed risk among fully covered generated candidates
 - `balanced`: modified A* result with `beta=2.0`
 - `alternative`: distinct candidate generated with temporary edge penalties
 
-A single route can carry multiple labels when it wins more than one objective. The application does not fabricate a missing `safest` label when incident coverage is insufficient.
+A single route can carry multiple labels when it wins more than one objective. The application does not fabricate a missing `safest` label when incident coverage is insufficient. Exceeding the configured search exploration limit returns HTTP 503.
 
 `/api/safe-route/` remains an alias of `/api/routes/` for compatibility.
 
@@ -175,7 +178,7 @@ OSM ways are split into edges between consecutive nodes. The parser:
 - Applies access hierarchy and removes restricted or blocked access
 - Honors one-way direction rules
 - Removes edges blocked by physical node barriers
-- Preserves source and target geometry for map rendering and distance checks
+- Stores source and target coordinates for each edge
 - Calculates edge distance from consecutive OSM node coordinates
 - Estimates travel time from road class and `maxspeed` when available
 
@@ -204,12 +207,21 @@ Risk scoring is deterministic and uses no predictive model:
 1. Read the bundled CSV and remove exact duplicate rows.
 2. Reject rows with missing, non-finite, out-of-range, or invalid severity values.
 3. Normalize severity from 1 to 5 into a value from 0 to 1.
-4. Measure distance from each incident to the complete geometry of each road edge.
+4. Measure distance from each incident to the stored segment between each edge's endpoints.
 5. Apply a 200 metre radius with linear proximity decay.
 6. Aggregate severity-weighted exposure.
-7. Convert exposure with `risk = 1 - exp(-exposure)`.
+7. Convert edge exposure with `edge_risk = 1 - exp(-exposure)`.
 
-Incident coverage is tracked separately from risk magnitude. A route outside the dataset's coverage area receives unknown safety and no unsupported `safest` label.
+For a fully covered route, risk is the distance-weighted mean of its edge risks:
+
+```text
+route_risk = sum(distance_m * edge_risk) / sum(distance_m)
+safety_score = round((1 - route_risk) * 100)
+```
+
+Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
+
+Incident coverage is tracked separately from risk magnitude. Any route that is not fully covered receives unknown safety and no unsupported `safest` label. Partial coverage is never treated as zero risk.
 
 The bundled file currently contains 225 raw rows and 193 valid unique incident records.
 
@@ -220,7 +232,7 @@ The bundled file currently contains 225 raw rows and 193 valid unique incident r
 - Selecting a route card highlights that line and updates its map emphasis.
 - Route cards and comparison rows show only API values.
 - Loading, empty, error, and unknown-coverage states are explicit.
-- The heatmap uses actual incident points and starts disabled.
+- The heatmap uses bundled incident points and starts disabled.
 - Theme changes persist in local storage and replace only the tile layer. Route selection and heatmap state remain intact.
 - The layout is usable down to 320 CSS pixels without horizontal page overflow.
 
@@ -252,7 +264,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 59 Django tests passed
+- 61 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed for 30 source files
@@ -295,11 +307,12 @@ docs/
 | 2 | Django hardening, directed OSM graph, Dijkstra, modified A*, safeguards, and routing tests | `a268e33` through `e8af93e` |
 | 3 | Tailwind interface, API-driven route cards, comparison, geocoding proxy, and local favicon | `a6e779d` |
 | 4 | Multi-route map rendering, colors, legend, and selection | `88f59c3` |
-| 5 | Actual-data independent safety heatmap | `8336f8d` |
+| 5 | Bundled-data independent safety heatmap | `8336f8d` |
 | 6 | Persisted application theme and synchronized map tiles | `429b86a`, `dd1895c` |
 | 7 | Responsive navigation refinement through 320 px | `ca7b361` |
-| 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07` |
-| 9 | Final setup, API, algorithm, architecture, testing, and limitation documentation | Current documentation commit |
+| 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07`, `5ec7aef` |
+| 9 | Initial setup, API, algorithm, architecture, testing, and limitation documentation | `484ddba` |
+| 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8` |
 
 ## Limitations and deliberate omissions
 
@@ -309,7 +322,8 @@ docs/
 - Travel time is an estimate from road class and available speed data, not live traffic.
 - OSM road snapshots and Nominatim results depend on external service availability and freshness.
 - Map tiles remain network-dependent even though map libraries are vendored locally.
-- The bundled dataset has finite geographic coverage. Routes outside it are reported as unrated rather than safe.
+- The bundled dataset has finite geographic coverage. Routes that are not fully covered by it are reported as unrated rather than safe.
+- OSM turn restrictions and relation-based restrictions are not applied, so routes may ignore valid turn bans and differ from production routers.
 - The included Docker configuration uses the Django development server and is not production hardened.
 - SAFE PATH has no custom authentication workflow, user accounts, personalization, live incident reporting, or incident moderation.
 - No external LLM, deep learning model, FDL component, or fabricated fallback data is present.

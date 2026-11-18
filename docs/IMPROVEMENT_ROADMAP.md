@@ -462,7 +462,7 @@ Each commit will contain one coherent, checked change. Existing history will not
 | All routes visible | Browser polyline-count test |
 | Correct route selection | Browser layer-state test |
 | Independent heatmap | Browser toggle and coexistence test |
-| Actual-data heatmap | Heatmap API fixture and source check |
+| Bundled-data heatmap | Heatmap API fixture and source check |
 | Complete light and dark themes | Theme state and browser screenshot or computed-style checks |
 | Theme-aware map | Tile-source test and browser theme test |
 | Authentication and reporting regression | Django auth smoke test and explicit limitation for absent reporting feature |

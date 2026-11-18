@@ -32,12 +32,12 @@ flowchart LR
     Service --> Graph
     Service --> Risk
     Risk --> CSV
-    Graph -->|Validated XML snapshots| OSM
+    OSM -->|Validated XML snapshots| Graph
     API -->|HTTPS, restricted host| Geo
     User -->|HTTPS map tiles| Tiles
 ```
 
-The browser receives route geometry and metrics from the same-origin API. It does not calculate paths or risk. Django does not persist route results.
+The browser receives route geometry and metrics through relative API requests. It does not calculate paths or risk. Django does not persist route results and does not enforce HTTP `Origin` headers.
 
 ## 3. Backend components
 
@@ -47,7 +47,7 @@ The browser receives route geometry and metrics from the same-origin API. It doe
 | Route service | `Model/utils/route_service.py` | Candidate generation, objective labels, diversity filtering, route metrics |
 | Search core | `Model/utils/routing.py` | Dijkstra, modified A*, path reconstruction, cost validation, exploration limits |
 | Graph builder | `Model/utils/osm_graph.py` | OSM acquisition, XML limits, access rules, one-way handling, barriers, caching |
-| Graph model | `Model/utils/road_graph.py` | Nodes, directed edges, geometry, distance validation, adjacency indexes |
+| Graph model | `Model/utils/road_graph.py` | Nodes, directed edges, endpoint-segment geometry, distance validation, adjacency indexes |
 | Risk scorer | `Model/utils/risk_scoring.py` | Incident validation, spatial index, proximity exposure, risk conversion, coverage |
 | Incident loader | `Model/utils/crime_loader.py` | Read and normalize bundled CSV columns |
 
@@ -84,7 +84,7 @@ flowchart TD
 - `end_lat` between `-90` and `90`
 - `end_lon` between `-180` and `180`
 
-Invalid or missing coordinates return HTTP 400. Requests exceeding the configured span or area return HTTP 400. If road data cannot be loaded, the API returns HTTP 503. A disconnected graph returns HTTP 404.
+Invalid or missing coordinates return HTTP 400. Requests exceeding the configured span or area return HTTP 400. If road data cannot be loaded or a search exceeds its exploration limit, the API returns HTTP 503. A disconnected graph returns HTTP 404.
 
 ### 4.2 OSM acquisition and graph construction
 
@@ -101,9 +101,9 @@ For each accepted OSM way, the parser:
 5. Creates an edge for every consecutive node pair.
 6. Calculates distance from node coordinates.
 7. Estimates travel time from road class and `maxspeed` when available.
-8. Retains way geometry and metadata.
+8. Stores the segment between consecutive OSM nodes and retains way metadata.
 
-The `RoadGraph` rejects an edge whose distance is less than 99% of the endpoint geodesic distance.
+The `RoadGraph` rejects an edge whose distance is less than 99% of the endpoint geodesic distance. The parser does not apply OSM turn restrictions or relation-based restrictions, so routes may ignore valid turn bans.
 
 ### 4.3 Endpoint snapping
 
@@ -150,9 +150,9 @@ flowchart LR
     Valid --> Normalize[Normalize severity to 0..1]
     Normalize --> Project[Local metric projection]
     Project --> Tree[Shapely STRtree]
-    Graph[Road edge geometry] --> Search[Edge neighborhood search]
+    Graph[Road edge segments] --> Search[Edge neighborhood search]
     Tree --> Search
-    Search --> Distance[Distance to full edge geometry]
+    Search --> Distance[Distance to stored edge segment]
     Distance --> Exposure[Linear proximity exposure]
     Exposure --> Risk["1 - exp(-exposure)"]
     Graph --> Coverage[Dataset coverage check]
@@ -166,7 +166,7 @@ The bundled CSV has 225 raw rows. Exact duplicate rows are removed. A record is 
 
 ### 5.2 Proximity exposure
 
-Each incident is projected to a local metric plane around the dataset's reference latitude. A Shapely spatial index limits candidate searches. Distance is measured to the complete edge geometry rather than only its endpoints.
+Each incident is projected to a local metric plane around the dataset's reference latitude. A Shapely spatial index limits candidate searches. Distance is measured to the stored straight segment between consecutive edge endpoints.
 
 For an incident at distance `d` from an edge and radius `R=200` metres:
 
@@ -181,14 +181,21 @@ Incidents farther than `R` do not contribute.
 Exposure from all accepted incidents is aggregated per edge:
 
 ```text
-risk = 1 - exp(-exposure)
+edge_risk = 1 - exp(-exposure)
 ```
 
-The result is bounded from 0 to 1. The same score is used by route weighting and exposed in route metrics.
+The result is bounded from 0 to 1. These edge risks feed the route weighting objective. For a fully covered route, the reported risk is the distance-weighted mean:
+
+```text
+route_risk = sum(distance_m * edge_risk) / sum(distance_m)
+safety_score = round((1 - route_risk) * 100)
+```
+
+Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
 
 ### 5.4 Coverage semantics
 
-Dataset coverage is independent of incident magnitude. An edge is covered when its geometry intersects the bounding area of accepted incidents. A route is fully covered when all of its edge distance is covered.
+Dataset coverage is independent of incident magnitude. An edge is covered when its stored segment intersects the bounding area of accepted incidents. A route is fully covered when all of its edge distance is covered.
 
 Fully covered routes can compete for the `safest` label. Partially covered or uncovered routes receive `risk_data_available=false`, `risk_score=null`, `safety_score=null`, and `risk_level="unknown"`. This prevents missing data from being presented as low risk.
 
@@ -230,18 +237,18 @@ sequenceDiagram
 
 Key route fields include:
 
-- `id` and `labels`
+- `id`, `type`, and `labels`
 - `algorithm` and `cost_function`
 - `node_ids` and `edge_ids`
 - `geometry` as latitude and longitude pairs
-- `distance_meters`, `distance_km`, and `duration_seconds`
+- `distance_meters`, `distance_km`, `duration_seconds`, and `duration_source`
 - `risk_score`, `safety_score`, `risk_level`, and `risk_data_available`
 - `incident_coverage_ratio`
 - `nodes_explored`, `computation_time_ms`, and `path_cost`
 - `diversity.shared_interior_edge_ratio`
 - `explanation`
 
-The top-level response also includes origin, destination, route count, incident source, and compatibility geometry fields.
+The top-level response includes `origin`, `destination`, `routes`, `route_count`, `incident_data`, `original_route`, `safe_path`, `distance_meters`, `avg_risk`, `nodes`, and `segments`. The final four fields are compatibility summary fields for the shortest route.
 
 ## 8. Frontend state
 
@@ -277,7 +284,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 
 | Boundary | Safeguard |
 | --- | --- |
-| Browser to Django | Same-origin API paths, DRF parsing, coordinate validation, scoped throttling |
+| Browser to Django | Relative API paths, DRF parsing, coordinate validation, scoped throttling, no HTTP `Origin` enforcement |
 | Django to OSM | HTTPS host allowlist, no redirects, stream byte limit, request limit, depth limit, DTD and entity rejection |
 | Django to Nominatim | HTTPS host allowlist, no redirects, connect and read timeouts, response coordinate validation |
 | Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks |
@@ -329,7 +336,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container is intended for local evaluation. It runs Django's development server with static-file serving enabled for this image, and Compose mounts the repository into the container. A production deployment would need a production WSGI server, static asset collection, persistent storage policy, TLS termination, and an appropriate secret-management process.
+The checked-in container is intended for local evaluation. It applies standard Django migrations at startup, runs Django's development server with static-file serving enabled for this image, and Compose mounts the repository into the container. Compose also loads `.env`, including `SAFEPATH_*` values, into the container. A production deployment would need a production WSGI server, static asset collection, persistent storage policy, TLS termination, and an appropriate secret-management process.
 
 ## 12. Test boundaries
 
@@ -338,7 +345,7 @@ The checked-in container is intended for local evaluation. It runs Django's deve
 | Graph unit tests | `web/test_osm_graph.py` | XML parsing, directions, access, barriers, malformed data, limits |
 | Routing unit tests | `web/test_routing.py` | Dijkstra, A*, admissibility, distance checks, disconnected graphs |
 | Risk unit tests | `web/test_risk_scoring.py` | Proximity, severity, deduplication, malformed rows, coverage |
-| Route service tests | `web/test_route_service.py` | Roles, merged labels, alternatives, diversity, metrics, caching |
+| Route service tests | `web/test_route_service.py` | Roles, merged labels, alternatives, pairwise diversity, metrics, coverage |
 | API contract tests | `web/test_routes_api.py`, `web/test_geocode_api.py`, `web/test_heatmap_api.py` | Validation, status codes, throttling, serialization, provider failures |
 | Application smoke tests | `web/test_application.py` | Home page, health endpoint, admin framework, local assets |
 | Browser tests | `web/e2e/app.spec.js` | Route rendering, selection, heatmap, themes, errors, console, overflow |
