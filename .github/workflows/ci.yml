@@ -77,6 +77,50 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Docker Compose configuration
+        run: |
+          trap 'rm -f .env' EXIT
+          cp .env.example .env
+          sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
+          compose_config="$(docker compose config)"
+          echo "$compose_config" | grep -q 'SAFEPATH_DATABASE_PATH: /data/db.sqlite3'
+          echo "$compose_config" | grep -q 'source: safepath_data'
+
+      - name: Docker Compose startup
+        run: |
+          trap 'docker compose down --volumes; rm -f .env' EXIT
+          cp .env.example .env
+          sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
+          docker compose up --detach --build
+          for attempt in {1..60}; do
+            container_status="$(docker inspect --format '{{.State.Status}}' safepath_django)"
+            health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath_django)"
+            if [ "$health_status" = "healthy" ]; then
+              break
+            fi
+            if [ "$container_status" = "exited" ] || [ "$health_status" = "unhealthy" ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 2
+          done
+          health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath_django)"
+          if [ "$health_status" != "healthy" ]; then
+            docker compose logs
+            exit 1
+          fi
+          test ! -e db.sqlite3
+          docker compose exec -T django python manage.py migrate --check
+          if ! {
+            curl --fail --silent --output /dev/null \
+              http://127.0.0.1:8000/static/web/vendor/leaflet/leaflet.js &&
+            curl --fail --silent --output /dev/null \
+              http://127.0.0.1:8000/static/web/css/app.css
+          }; then
+            docker compose logs
+            exit 1
+          fi
+
       - name: Docker build and health check
         run: |
           docker build --tag safepath-ci .
@@ -101,8 +145,13 @@ jobs:
             docker logs safepath-ci
             exit 1
           fi
-          curl --fail --silent --output /dev/null \
-            http://127.0.0.1:8000/static/web/vendor/leaflet/leaflet.js
-          curl --fail --silent --output /dev/null \
-            http://127.0.0.1:8000/static/web/css/app.css
-          docker exec safepath-ci python manage.py migrate --check
+          if ! {
+            curl --fail --silent --output /dev/null \
+              http://127.0.0.1:8000/static/web/vendor/leaflet/leaflet.js &&
+            curl --fail --silent --output /dev/null \
+              http://127.0.0.1:8000/static/web/css/app.css &&
+            docker exec safepath-ci python manage.py migrate --check
+          }; then
+            docker logs safepath-ci
+            exit 1
+          fi

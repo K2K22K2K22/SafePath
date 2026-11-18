@@ -87,10 +87,14 @@ WSGI_APPLICATION = "safepath_backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+DATABASE_PATH = Path(
+    os.environ.get("SAFEPATH_DATABASE_PATH") or BASE_DIR / "db.sqlite3"
+).resolve()
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": DATABASE_PATH,
     }
 }
 

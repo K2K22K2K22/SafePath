@@ -209,6 +209,9 @@ function formatDuration(durationSeconds) {
 }
 
 function formatLabel(label) {
+    if (label === "safest") {
+        return "Safest by proximity";
+    }
     return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -236,7 +239,7 @@ function riskLabel(route) {
     return formatLabel(route.risk_level);
 }
 
-function safetyLabel(route) {
+function recordScoreLabel(route) {
     if (!route.risk_data_available || route.safety_score === null) {
         return "Not rated";
     }
@@ -272,7 +275,7 @@ function renderRouteCards(routes) {
         card.querySelector("[data-route-title]").textContent = routeTitle(route);
         card.querySelector("[data-route-distance]").textContent = formatDistance(route.distance_meters);
         card.querySelector("[data-route-duration]").textContent = formatDuration(route.duration_seconds);
-        card.querySelector("[data-route-safety]").textContent = safetyLabel(route);
+        card.querySelector("[data-route-safety]").textContent = recordScoreLabel(route);
         card.querySelector("[data-route-risk]").textContent = riskLabel(route);
         card.querySelector("[data-route-explanation]").textContent = route.explanation;
         card.querySelector("[data-route-algorithm]").textContent =
@@ -295,7 +298,7 @@ function renderComparison(routes) {
         row.querySelector("[data-comparison-route]").textContent = routeTitle(route);
         row.querySelector("[data-comparison-distance]").textContent = formatDistance(route.distance_meters);
         row.querySelector("[data-comparison-duration]").textContent = formatDuration(route.duration_seconds);
-        row.querySelector("[data-comparison-safety]").textContent = safetyLabel(route);
+        row.querySelector("[data-comparison-safety]").textContent = recordScoreLabel(route);
         row.querySelector("[data-comparison-risk]").textContent = riskLabel(route);
         fragment.appendChild(row);
     });

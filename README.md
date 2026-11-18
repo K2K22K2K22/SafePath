@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes port `8000`, applies standard Django migrations at startup, serves the vendored static assets through Django's development server, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container and mounts the working tree. It is suitable for local evaluation, not a hardened production deployment.
+The container exposes port `8000`, applies standard Django migrations at startup, serves the vendored static assets through Django's development server, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container and mounts the working tree. SQLite data stays in the `safepath_data` named volume, so container startup does not create a root-owned database in the host checkout. It is suitable for local evaluation, not a hardened production deployment.
 
 ## Configuration
 
@@ -95,6 +95,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
 | `DJANGO_SECRET_KEY` | unset | Required when debug mode is off |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Accepted deployment hosts; loopback hosts are always retained for health checks |
+| `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
 | `SAFEPATH_GEOCODER_ALLOWED_HOSTS` | `nominatim.openstreetmap.org` | HTTPS hosts allowed for geocoding |
 | `SAFEPATH_ROUTE_THROTTLE_RATE` | `20/minute` | Route API request limit |
@@ -123,7 +124,7 @@ GET /api/routes/?start_lat=28.4748&start_lon=77.4764&end_lat=28.48&end_lon=77.48
 
 A successful response contains:
 
-- `routes`: up to four route objects with geometry, labels, algorithm, distance, duration, risk, safety score, coverage, search metrics, and diversity metrics
+- `routes`: up to four route objects with geometry, labels, algorithm, distance, duration, proximity risk, record score, coverage, search metrics, and diversity metrics
 - `route_count`: number of routes actually generated
 - `origin` and `destination`: validated request coordinates
 - `incident_data`: the bundled incident source
@@ -136,7 +137,7 @@ Each route also includes `type` and `duration_source`.
 Route labels are emitted only for supported model roles:
 
 - `shortest`: minimum road-edge distance in the loaded graph
-- `safest`: lowest computed risk among fully covered generated candidates
+- `safest`: lowest computed incident-record proximity risk among fully covered generated candidates; the interface renders this as `Safest by proximity`
 - `balanced`: modified A* result with `beta=2.0`
 - `alternative`: distinct candidate generated with temporary edge penalties
 
@@ -152,7 +153,7 @@ GET /api/geocode/?q=Connaught%20Place%20Delhi
 
 The proxy validates the query length, restricts the provider to configured HTTPS hosts, rejects redirects, applies a timeout, and returns only finite, valid coordinates.
 
-### Safety heatmap
+### Incident heatmap
 
 ```text
 GET /api/safety-heatmap/
@@ -212,14 +213,14 @@ Risk scoring is deterministic and uses no predictive model:
 6. Aggregate severity-weighted exposure.
 7. Convert edge exposure with `edge_risk = 1 - exp(-exposure)`.
 
-For a fully covered route, risk is the distance-weighted mean of its edge risks:
+For a fully covered route, proximity risk is the distance-weighted mean of its edge risks:
 
 ```text
 route_risk = sum(distance_m * edge_risk) / sum(distance_m)
 safety_score = round((1 - route_risk) * 100)
 ```
 
-Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
+The API retains `risk_score` and `safety_score` field names for compatibility. The interface presents them as proximity risk and record score. Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
 
 Incident coverage is tracked separately from risk magnitude. Any route that is not fully covered receives unknown safety and no unsupported `safest` label. Partial coverage is never treated as zero risk.
 
@@ -307,18 +308,19 @@ docs/
 | 2 | Django hardening, directed OSM graph, Dijkstra, modified A*, safeguards, and routing tests | `a268e33` through `e8af93e` |
 | 3 | Tailwind interface, API-driven route cards, comparison, geocoding proxy, and local favicon | `a6e779d` |
 | 4 | Multi-route map rendering, colors, legend, and selection | `88f59c3` |
-| 5 | Bundled-data independent safety heatmap | `8336f8d` |
+| 5 | Bundled-data independent incident heatmap | `8336f8d` |
 | 6 | Persisted application theme and synchronized map tiles | `429b86a`, `dd1895c` |
 | 7 | Responsive navigation refinement through 320 px | `ca7b361` |
 | 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07`, `5ec7aef`, `965ffc3` |
 | 9 | Initial setup, API, algorithm, architecture, testing, and limitation documentation | `484ddba` |
 | 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8`, `4977d13`, `ab83c59`, `2780c70` |
+| 11 | Review-driven container ownership, risk-language, and CI diagnostics fixes | Current review commit |
 
 ## Limitations and deliberate omissions
 
 - Incident data is a static bundled dataset, not a live police or emergency feed.
 - The CSV's provenance and collection methodology are not documented. Its records must not be treated as verified real-world crime data.
-- Safety scores describe proximity to bundled records, not personal safety, crime likelihood, or an individual risk assessment.
+- Record scores and proximity risk describe distance to bundled records, not personal safety, crime likelihood, or an individual risk assessment. The interface states this beside the route planner.
 - Travel time is an estimate from road class and available speed data, not live traffic.
 - OSM road snapshots and Nominatim results depend on external service availability and freshness.
 - Map tiles remain network-dependent even though map libraries are vendored locally.

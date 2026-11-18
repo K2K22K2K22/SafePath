@@ -424,7 +424,9 @@ def _risk_level(risk_score):
 
 def _route_explanation(labels):
     explanations = {
-        "safest": "Lowest computed risk among fully covered generated routes.",
+        "safest": (
+            "Lowest incident-record proximity risk among fully covered generated routes."
+        ),
         "shortest": "Minimum road-edge distance in the loaded graph.",
         "balanced": "Balanced distance and risk objective.",
         "alternative": "Distinct path generated with temporary edge penalties.",

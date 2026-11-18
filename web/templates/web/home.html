@@ -1,7 +1,7 @@
 {% extends 'web/base.html' %}
 {% load static %}
 
-{% block title %}SAFE PATH | Compare safer routes{% endblock %}
+{% block title %}SAFE PATH | Compare route risk context{% endblock %}
 
 {% block content %}
 <main class="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
@@ -9,8 +9,9 @@
         <aside class="contents lg:grid lg:gap-4" aria-label="Route planner and results">
             <section class="panel order-1 p-4 sm:p-5 lg:order-none">
                 <p class="eyebrow">Route planner</p>
-                <h1 class="mt-1 text-2xl font-extrabold tracking-tight text-ink">Plan a safer journey</h1>
+                <h1 class="mt-1 text-2xl font-extrabold tracking-tight text-ink">Compare routes by risk context</h1>
                 <p class="mt-2 text-sm leading-6 text-ink-muted">Compare real road paths by distance, estimated travel time, and incident-record proximity risk.</p>
+                <p class="mt-1 text-xs leading-5 text-ink-muted">Based on proximity to bundled records; not a personal-safety assessment.</p>
 
                 <form id="route-form" class="mt-5 grid gap-3" novalidate>
                     <div>
@@ -66,7 +67,7 @@
                         <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3-4 3 2 4-6"/></svg>
                     </span>
                     <p class="mt-3 text-sm font-bold text-ink">No routes to compare yet</p>
-                    <p class="mx-auto mt-1 max-w-xs text-xs leading-5 text-ink-muted">Route results, safety scores, and travel estimates appear here after a search.</p>
+                    <p class="mx-auto mt-1 max-w-xs text-xs leading-5 text-ink-muted">Route results, record-proximity scores, and travel estimates appear here after a search.</p>
                 </div>
 
                 <div id="route-loading-state" class="hidden grid gap-3 px-4 py-4" aria-label="Loading route options">
@@ -89,8 +90,8 @@
                                 <th class="px-4 py-3 font-bold sm:px-5" scope="col">Route</th>
                                 <th class="px-4 py-3 font-bold" scope="col">Distance</th>
                                 <th class="px-4 py-3 font-bold" scope="col">Est. time</th>
-                                <th class="px-4 py-3 font-bold" scope="col">Safety</th>
-                                <th class="px-4 py-3 font-bold" scope="col">Risk</th>
+                                <th class="px-4 py-3 font-bold" scope="col">Record score</th>
+                                <th class="px-4 py-3 font-bold" scope="col">Proximity risk</th>
                             </tr>
                         </thead>
                         <tbody id="comparison-body" class="divide-y divide-line"></tbody>
@@ -108,7 +109,7 @@
                 <div class="mt-2 flex flex-wrap gap-2">
                     <button id="set-start" class="secondary-button" type="button" aria-pressed="false">Set start</button>
                     <button id="set-destination" class="secondary-button" type="button" aria-pressed="true">Set destination</button>
-                    <button id="heatmap-toggle" class="secondary-button" type="button" aria-pressed="false">Safety heatmap</button>
+                    <button id="heatmap-toggle" class="secondary-button" type="button" aria-pressed="false">Incident heatmap</button>
                 </div>
                 <p id="heatmap-status" class="mt-2 text-[0.68rem] leading-4 text-ink-muted" role="status" aria-live="polite">Heatmap off</p>
                 <div id="route-legend" class="mt-3 border-t border-line pt-3" hidden>

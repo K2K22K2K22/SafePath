@@ -169,7 +169,7 @@ For each road edge and incident:
 5. Sum the contributions for all nearby incidents.
 6. Convert the bounded exposure to edge risk in the range 0 to 1.
 
-Route risk will be the length-weighted mean edge risk. Safety score will be the inverse risk score on a 0 to 100 scale. Risk level thresholds and the exact formula will be documented with the implementation.
+Route risk will be the length-weighted mean edge risk. The API safety score will be the inverse risk score on a 0 to 100 scale, presented in the interface as a record score. Risk level thresholds and the exact formula will be documented with the implementation.
 
 A route that is not fully covered by the incident dataset will report unknown safety. The interface will present that route as unrated instead of claiming that it is proven safe.
 
@@ -324,7 +324,7 @@ Configuration changes:
 - Mark the safest route with a safe recommendation label only when it has the lowest risk objective among comparable routes.
 - Mark the shortest route only when it is the Dijkstra result.
 - Show balanced and alternative labels from the API rather than assuming a fixed count or order.
-- Show distance, estimated travel time, safety score, risk level, and a short data-based explanation.
+- Show distance, estimated travel time, record score, proximity risk level, and a short data-based explanation.
 - Keep a compact comparison table for the shortest, safest, and balanced objectives.
 
 ### 7.3 Map
@@ -418,7 +418,7 @@ Tests that require public OSM API, tile, or geocoding services will be separate 
 | 2c | Add routing regression coverage | `test(routing): validate path distance risk and route diversity` |
 | 3 | Add reusable route cards and comparison UI | `feat(ui): add route recommendation and comparison interface` |
 | 4 | Render and select multiple road routes | `feat(map): render and interact with alternative road routes` |
-| 5 | Add incident heatmap layer and toggle | `feat(map): add interactive safety heatmap layer` |
+| 5 | Add incident heatmap layer and toggle | `feat(map): add interactive incident heatmap layer` |
 | 6a | Add application theme state and styling | `feat(ui): implement application-wide dark and light themes` |
 | 6b | Synchronise map tiles and overlays with theme | `feat(map): synchronize map tiles and overlays with application theme` |
 | 7 | Refine responsive navigation experience | `ui: refine SAFE PATH navigation experience` |
@@ -439,7 +439,7 @@ Each commit will contain one coherent, checked change. Existing history will not
 | No existing user-report or custom authentication feature | Requested regression coverage cannot test absent features | Preserve Django framework support and state the product limitation accurately |
 | Tailwind and browser-test tooling | Additional Node build step | Use pinned packages, commit lockfiles, and document one build command |
 | Different runtime versions | Current pinned NumPy and pandas versions do not install on the audit host's Python 3.15 | Standardise development and CI on Python 3.13, matching the Docker image |
-| Limited incident history | Safety score has limited validity | Keep the formula transparent, expose source and coverage, and support future incident sources without changing route logic |
+| Limited incident history | Record score has limited validity | Keep the formula transparent, expose source and coverage, and support future incident sources without changing route logic |
 
 ## 11. Explicitly deferred work
 
@@ -462,7 +462,7 @@ Each commit will contain one coherent, checked change. Existing history will not
 | All routes visible | Browser polyline-count test |
 | Correct route selection | Browser layer-state test |
 | Independent heatmap | Browser toggle and coexistence test |
-| Bundled-data heatmap | Heatmap API fixture and source check |
+| Bundled-data incident heatmap | Heatmap API fixture and source check |
 | Complete light and dark themes | Theme state and browser screenshot or computed-style checks |
 | Theme-aware map | Tile-source test and browser theme test |
 | Authentication and reporting regression | Django auth smoke test and explicit limitation for absent reporting feature |

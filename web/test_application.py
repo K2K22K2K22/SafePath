@@ -14,7 +14,8 @@ class ApplicationSmokeTests(SimpleTestCase):
         content = response.content.decode()
         self.assertIn("route-card-template", content)
         self.assertIn("comparison-row-template", content)
-        self.assertIn("Safety heatmap", content)
+        self.assertIn("Incident heatmap", content)
+        self.assertIn("not a personal-safety assessment", content)
         self.assertNotIn("Throught ABC Block", content)
         self.assertNotIn("Walk: 24 min", content)
 

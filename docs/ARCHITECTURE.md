@@ -191,7 +191,7 @@ route_risk = sum(distance_m * edge_risk) / sum(distance_m)
 safety_score = round((1 - route_risk) * 100)
 ```
 
-Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
+The API keeps `risk_score` and `safety_score` names for compatibility. The interface labels them proximity risk and record score and states that they are not a personal-safety assessment. Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
 
 ### 5.4 Coverage semantics
 
@@ -206,7 +206,7 @@ Labels are assigned from actual generated candidates:
 | Label | Rule |
 | --- | --- |
 | `shortest` | The Dijkstra path with minimum road-edge distance |
-| `safest` | Lowest computed risk among fully covered generated candidates |
+| `safest` | Lowest computed incident-record proximity risk among fully covered generated candidates; rendered as `Safest by proximity` |
 | `balanced` | The modified A* path with `beta=2.0` |
 | `alternative` | A retained candidate without a more specific role |
 
@@ -278,7 +278,7 @@ The browser stores only presentation and request state:
 - Current theme and tile layer
 - Map point selection mode
 
-Route rendering uses a dedicated Leaflet pane. Route colors are assigned by route order and reused by cards, map lines, and the legend. Theme changes replace the tile layer without rebuilding route or heatmap layers.
+Route rendering uses a dedicated Leaflet pane. Route colors are assigned by route order and reused by cards, map lines, and the legend. Theme changes replace the tile layer without rebuilding route or heatmap layers. The interface presents computed values as record score and proximity risk and includes a visible disclaimer that they are not a personal-safety assessment.
 
 ## 9. Trust boundaries and safeguards
 
@@ -322,6 +322,7 @@ flowchart TB
     Django --> Static[Local static assets]
     Django -->|HTTPS road and location data| External[OSM and Nominatim]
     Django --> CSV[Bundled incident CSV]
+    Container --> Database[(safepath_data volume)]
 
     subgraph CI[GitHub Actions]
         Quality[Ruff, Mypy, ESLint, Django, Tailwind]
@@ -336,7 +337,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container is intended for local evaluation. It applies standard Django migrations at startup, runs Django's development server with static-file serving enabled for this image, and Compose mounts the repository into the container. Compose also loads `.env`, including `SAFEPATH_*` values, into the container. A production deployment would need a production WSGI server, static asset collection, persistent storage policy, TLS termination, and an appropriate secret-management process.
+The checked-in container is intended for local evaluation. It applies standard Django migrations at startup, runs Django's development server with static-file serving enabled for this image, and Compose mounts the repository into the container. Compose also loads `.env`, including `SAFEPATH_*` values, into the container. SQLite uses the `safepath_data` named volume rather than the host checkout, preventing root-owned database files in the working tree. A production deployment would need a production WSGI server, static asset collection, persistent storage policy, TLS termination, and an appropriate secret-management process.
 
 ## 12. Test boundaries
 

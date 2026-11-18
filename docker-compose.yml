@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+      - safepath_data:/data
     env_file:
       - .env
     environment:
@@ -13,4 +14,8 @@ services:
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       - DJANGO_DEBUG=False
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - SAFEPATH_DATABASE_PATH=/data/db.sqlite3
     restart: always
+
+volumes:
+  safepath_data:

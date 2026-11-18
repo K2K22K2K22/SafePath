@@ -44,13 +44,13 @@ test("keeps the heatmap independent from route layers", async ({ page }) => {
   await page.goto("/");
   await submitRoute(page);
 
-  await page.getByRole("button", { name: "Safety heatmap" }).click();
+  await page.getByRole("button", { name: "Incident heatmap" }).click();
 
   await expect(page.locator(".leaflet-heatmap-layer")).toHaveCount(1);
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
   await expect(page.locator("#heatmap-toggle")).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByRole("button", { name: "Safety heatmap" }).click();
+  await page.getByRole("button", { name: "Incident heatmap" }).click();
 
   await expect(page.locator(".leaflet-heatmap-layer")).toHaveCount(0);
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
@@ -60,7 +60,7 @@ test("shows an empty heatmap state without creating a layer", async ({ page }) =
   await mockApplication(page, { heatmapPoints: [] });
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Safety heatmap" }).click();
+  await page.getByRole("button", { name: "Incident heatmap" }).click();
 
   await expect(page.locator("#heatmap-status")).toHaveText(
     "No bundled incident records are available.",
