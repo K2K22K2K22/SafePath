@@ -82,14 +82,15 @@ jobs:
           docker build --tag safepath-ci .
           docker run --detach --name safepath-ci \
             --env DJANGO_SECRET_KEY=ci-only-secret \
-            --env DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+            --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
             --publish 8000:8000 safepath-ci
           for attempt in {1..60}; do
+            container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci)"
             if [ "$health_status" = "healthy" ]; then
               break
             fi
-            if [ "$health_status" = "unhealthy" ]; then
+            if [ "$container_status" = "exited" ] || [ "$health_status" = "unhealthy" ]; then
               docker logs safepath-ci
               exit 1
             fi
@@ -104,3 +105,4 @@ jobs:
             http://127.0.0.1:8000/static/web/vendor/leaflet/leaflet.js
           curl --fail --silent --output /dev/null \
             http://127.0.0.1:8000/static/web/css/app.css
+          docker exec safepath-ci python manage.py migrate --check
