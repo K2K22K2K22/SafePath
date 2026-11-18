@@ -1,10 +1,12 @@
 import os
 import runpy
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.conf import settings
 from django.test import SimpleTestCase
+
+from scripts.verify_static_assets import fetch
 
 
 class GunicornConfigurationTests(SimpleTestCase):
@@ -69,3 +71,37 @@ class ProductionStaticAssetSettingsTests(SimpleTestCase):
             config["STORAGES"]["staticfiles"]["BACKEND"],
             "whitenoise.storage.CompressedManifestStaticFilesStorage",
         )
+
+
+class StaticAssetVerifierTests(SimpleTestCase):
+    def response(self, url, body=b"asset", content_type="text/css", encoding=None):
+        response = MagicMock()
+        response.status = 200
+        response.geturl.return_value = url
+        response.read.return_value = body
+        response.headers.get_content_type.return_value = content_type
+        response.headers.get.return_value = encoding
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        return response
+
+    def test_rejects_redirected_static_response(self):
+        url = "https://example.test/static/app.css"
+        response = self.response("https://example.test/login")
+        with patch("scripts.verify_static_assets.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "redirected"):
+                fetch(url)
+
+    def test_rejects_unexpected_static_content_type(self):
+        url = "https://example.test/static/app.css"
+        response = self.response(url, content_type="text/html")
+        with patch("scripts.verify_static_assets.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "unexpected content type"):
+                fetch(url)
+
+    def test_rejects_invalid_gzip_payload(self):
+        url = "https://example.test/static/app.css"
+        response = self.response(url, body=b"not gzip", encoding="gzip")
+        with patch("scripts.verify_static_assets.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "invalid gzip payload"):
+                fetch(url, accept_gzip=True)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gzip
 import json
 import re
 from html.parser import HTMLParser
@@ -28,6 +29,13 @@ RENDERED_ASSETS = (
     "web/vendor/leaflet-heat/leaflet-heat.js",
     "web/images/favicon.svg",
 )
+EXPECTED_CONTENT_TYPES = {
+    ".css": {"text/css"},
+    ".html": {"text/html"},
+    ".js": {"application/javascript", "text/javascript"},
+    ".png": {"image/png"},
+    ".svg": {"image/svg+xml"},
+}
 
 
 class StaticAssetParser(HTMLParser):
@@ -50,8 +58,26 @@ def fetch(url, accept_gzip=False):
         body = response.read()
         if response.status != 200:
             raise RuntimeError(f"{url} returned HTTP {response.status}")
+        if response.geturl() != url:
+            raise RuntimeError(f"{url} redirected to {response.geturl()}")
         if not body:
             raise RuntimeError(f"{url} returned an empty response")
+
+        suffix = Path(urlparse(url).path).suffix.lower()
+        expected_types = EXPECTED_CONTENT_TYPES.get(suffix)
+        if expected_types and response.headers.get_content_type() not in expected_types:
+            raise RuntimeError(
+                f"{url} returned an unexpected content type: "
+                f"{response.headers.get_content_type()}"
+            )
+        if accept_gzip:
+            if response.headers.get("Content-Encoding") != "gzip":
+                raise RuntimeError(f"{url} was not served with gzip compression")
+            try:
+                gzip.decompress(body)
+            except (gzip.BadGzipFile, EOFError) as error:
+                raise RuntimeError(f"{url} returned an invalid gzip payload") from error
+
         return body, response.headers
 
 
@@ -104,9 +130,7 @@ def verify(base_url, manifest_path):
 
     for asset in ("web/css/app.css", "web/vendor/leaflet/leaflet.js"):
         url = urljoin(base_url, f"/static/{paths[asset]}")
-        _, headers = fetch(url, accept_gzip=True)
-        if headers.get("Content-Encoding") != "gzip":
-            raise RuntimeError(f"{url} was not served with gzip compression")
+        fetch(url, accept_gzip=True)
         print(f"OK gzip {urlparse(url).path}")
 
 

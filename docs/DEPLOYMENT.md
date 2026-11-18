@@ -20,13 +20,13 @@ The container runs as the unprivileged `safepath` user. It does not include `.en
 Production uses `whitenoise.storage.CompressedManifestStaticFilesStorage` and collects files into `staticfiles/`. The Docker build performs this step automatically. A native production build must run:
 
 ```bash
+DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_DEBUG=False \
-DJANGO_SECRET_KEY="replace-with-a-long-random-secret" \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
-python manage.py collectstatic --noinput --ignore "web/css/src/*"
+python manage.py collectstatic --noinput --clear --ignore "web/css/src/*"
 ```
 
-Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
+The secret file must be readable only by the release process, so shell history records the file path rather than the secret value. Do not commit `staticfiles/`. Django templates resolve hashed asset URLs through the static tag. The committed Tailwind stylesheet and vendored Leaflet files are the collection source. CI uses `scripts/verify_static_assets.py` to fetch every required manifest URL, CSS image reference, and compressed response from the running service.
 
 ## Migration modes
 
