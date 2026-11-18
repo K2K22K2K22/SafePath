@@ -21,7 +21,7 @@ The container runs as the unprivileged `safepath` user. It does not include `.en
 
 `/health/` and `/health/live/` are liveness endpoints. They only confirm that Django can serve a request. They do not query the database, construct a road graph, or call OSM or Nominatim. `/health/ready/` runs a database `SELECT 1` and returns HTTP 503 when the database is unavailable. Keep liveness and readiness paths separate so a database outage does not cause the platform to restart an otherwise healthy web process.
 
-Application logs use standard output and standard error. Gunicorn access logs contain the HTTP method, path without its query string, status, response size, and duration. Error logs contain the route pattern, error code, and exception type. They do not contain query values, exception text, credentials, connection strings, or traceback exception messages. The log formatter removes URL query strings and redacts exception text as a second boundary against accidental disclosure.
+Application logs use standard output and standard error. Gunicorn access logs contain the HTTP method, path without its query string, status, response size, and duration. Error logs contain the route pattern, error code, and exception type. Django, third-party, and Gunicorn errors use the same safe formatter. It removes URL query strings and credentials, redacts sensitive assignments, and replaces exception messages. Expected API validation failures are not repeated as server errors.
 
 Inspect logs with:
 
@@ -94,7 +94,7 @@ The `postgres://` and `postgresql://` schemes are supported. Production URLs acc
 
 Production mode rejects a PostgreSQL URL without `sslmode=require`, `verify-ca`, or `verify-full`. Prefer certificate verification. `require` encrypts the connection but does not authenticate the server certificate. The weaker `prefer`, `allow`, and `disable` modes are rejected. Production URLs reject every non-TLS query option so a secondary connection parameter cannot bypass the validated TLS mode or redirect the connection target.
 
-PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Run migrations against the same database before starting the release.
+PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Connection establishment is limited to five seconds and statements to ten seconds, keeping readiness checks and failed connections below the Gunicorn worker timeout. Run migrations against the same database before starting the release.
 
 ## Road data provider
 

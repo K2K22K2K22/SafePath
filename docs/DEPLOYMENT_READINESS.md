@@ -104,9 +104,11 @@ The Phase 7 local matrix passed 164 Django tests on SQLite and PostgreSQL, Pytho
 
 Expected API failures use typed errors with stable response codes. The covered cases are invalid coordinates, unsupported route distance, no connected path, road-provider unavailability, geocoder unavailability, rate limiting, search exploration limits, and invalid provider responses. Unexpected failures return a generic `internal_error` response without exception text or tracebacks.
 
-Django application logs use standard output and standard error. Gunicorn access logs use the URL path without its query string. Application error logs use the resolved route pattern, error code, and exception type. The shared formatter removes URL query strings and redacts exception messages. Expected client validation failures are not logged as application errors.
+Django application logs use standard output and standard error. Gunicorn access logs use the URL path without its query string. Application error logs use the resolved route pattern, error code, and exception type. The shared formatter removes URL query strings, URL credentials, and sensitive assignments, and redacts exception messages. Expected client validation failures are not logged as application errors.
 
-The Phase 8 local matrix passed 178 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime verified liveness, readiness, the 404 page, query-free access logs, migrations, and graceful stop. Native Docker and remote CI evidence remains pending because no push was performed.
+A follow-up security review bounded PostgreSQL connection establishment at five seconds and statements at ten seconds, routed third-party and Gunicorn errors through the safe formatter, and confirmed that unexpected route errors return a generic response instead of internal exception text.
+
+The Phase 8 local matrix passed 182 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime verified liveness, readiness, the 404 page, query-free access logs, migrations, and graceful stop. Native Docker and remote CI evidence remains pending because no push was performed.
 
 ## Baseline deployment posture at commit `9085090`
 

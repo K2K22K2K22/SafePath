@@ -212,6 +212,10 @@ class GunicornConfigurationTests(SimpleTestCase):
         self.assertEqual(config["errorlog"], "-")
         self.assertTrue(config["capture_output"])
         self.assertEqual(config["forwarded_allow_ips"], "")
+        self.assertEqual(
+            config["logconfig_dict"]["formatters"]["safe"]["()"],
+            "safepath_backend.logging.SafeLogFormatter",
+        )
 
     def test_reads_runtime_environment(self):
         config = self.load_config(
@@ -524,10 +528,29 @@ class DatabaseSettingsTests(SimpleTestCase):
             {
                 "sslmode": "verify-full",
                 "sslrootcert": "/etc/ssl/ca.pem",
+                "connect_timeout": 5,
+                "options": "-c statement_timeout=10000",
             },
         )
         self.assertEqual(database["CONN_MAX_AGE"], 90)
         self.assertTrue(database["CONN_HEALTH_CHECKS"])
+
+    def test_postgres_url_gets_bounded_connection_timeouts(self):
+        config = self.load_settings(
+            {
+                "DATABASE_URL": ("postgresql://user:pass@db.example.com:5432/safepath"),
+                "DJANGO_DEBUG": "True",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+            }
+        )
+
+        database = config["DATABASES"]["default"]
+        self.assertEqual(database["OPTIONS"]["connect_timeout"], 5)
+        self.assertEqual(
+            database["OPTIONS"]["options"],
+            "-c statement_timeout=10000",
+        )
 
     def test_sqlite_remains_the_local_fallback(self):
         config = self.load_settings(

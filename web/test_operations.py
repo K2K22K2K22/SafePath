@@ -194,6 +194,13 @@ class ApiErrorTests(SimpleTestCase):
 
 
 class OperationsLoggingTests(SimpleTestCase):
+    def test_third_party_logs_use_the_safe_root_handler(self):
+        self.assertEqual(settings.LOGGING["root"]["handlers"], ["stdout"])
+        self.assertEqual(
+            settings.LOGGING["handlers"]["stdout"]["formatter"],
+            "safe",
+        )
+
     def test_gunicorn_access_log_excludes_the_query_string(self):
         config_path = Path(settings.BASE_DIR) / "gunicorn.conf.py"
         with patch.dict(os.environ, {}, clear=True):
@@ -221,6 +228,19 @@ class OperationsLoggingTests(SimpleTestCase):
         self.assertNotIn("private-place", formatted)
         self.assertIn("/api/geocode/", formatted)
 
+    def test_log_formatter_redacts_credentials_and_standalone_query_values(self):
+        from safepath_backend.logging import redact_query_values
+
+        message = redact_query_values(
+            "database=postgres://admin:hunter2@db.example/safepath "
+            "password=private-value q=private-place"
+        )
+
+        self.assertNotIn("hunter2", message)
+        self.assertNotIn("private-value", message)
+        self.assertNotIn("private-place", message)
+        self.assertIn("[redacted]", message)
+
     def test_log_formatter_redacts_exception_text(self):
         from safepath_backend.logging import SafeLogFormatter
 
@@ -243,6 +263,29 @@ class OperationsLoggingTests(SimpleTestCase):
         formatted = formatter.format(record)
         self.assertNotIn("private-value", formatted)
         self.assertIn("RuntimeError: [details redacted]", formatted)
+
+    def test_log_formatter_redacts_exception_used_as_log_message(self):
+        from safepath_backend.logging import SafeLogFormatter
+
+        formatter = SafeLogFormatter("%(message)s")
+        try:
+            raise RuntimeError("private failure")
+        except RuntimeError:
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            "gunicorn.error",
+            logging.ERROR,
+            __file__,
+            1,
+            str(exc_info[1]),
+            (),
+            exc_info,
+        )
+
+        formatted = formatter.format(record)
+        self.assertNotIn("private failure", formatted)
+        self.assertIn("[details redacted]", formatted)
 
 
 @override_settings(DEBUG=False, ALLOWED_HOSTS=["testserver"])

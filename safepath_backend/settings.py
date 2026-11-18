@@ -238,6 +238,9 @@ if database_url:
             "Production DATABASE_URL must not override libpq connection options. "
             "Only TLS options are accepted."
         )
+    database.setdefault("OPTIONS", {})
+    database["OPTIONS"].setdefault("connect_timeout", 5)
+    database["OPTIONS"].setdefault("options", "-c statement_timeout=10000")
     DATABASES = {"default": database}
 else:
     DATABASES = {
@@ -327,6 +330,10 @@ LOGGING = {
             "formatter": "safe",
             "stream": "ext://sys.stderr",
         },
+    },
+    "root": {
+        "handlers": ["stdout"],
+        "level": "WARNING",
     },
     "loggers": {
         "django": {
