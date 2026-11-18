@@ -110,6 +110,14 @@ A follow-up security review bounded PostgreSQL connection establishment at five 
 
 The Phase 8 local matrix passed 182 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 14 browser tests. A fresh Podman image build and runtime verified liveness, readiness, the 404 page, query-free access logs, migrations, and graceful stop. Native Docker and remote CI evidence remains pending because no push was performed.
 
+## Phase 9 Render deployment configuration
+
+The repository now contains `.python-version`, a native Python `render.yaml`, a current-schema validator, and a deterministic Blueprint test. The Blueprint configures one Free web service in Singapore with one Gunicorn worker, a 40 second shutdown allowance, `/health/` health checks, a generated Django secret, and no secret values in the repository. It uses startup migrations because Render Free services cannot run a pre-deploy command, and it intentionally does not create Render Free PostgreSQL because that database expires after 30 days.
+
+`CSRF_TRUSTED_ORIGINS` is now the documented environment variable. `DJANGO_CSRF_TRUSTED_ORIGINS` remains accepted as a legacy alias. The deployment guide covers exact Neon, CARTO, road-provider, host, and origin values, Blueprint creation, migration behavior, Free-plan constraints, validation, and troubleshooting. No Render or Neon resource was created and no public deployment was attempted.
+
+The Phase 9 local matrix passed 188 Django tests, Python lint, format, type, and compile checks. The Blueprint passed `https://render.com/schema/render.yaml.json` validation on 2026-11-18. Remote CI and a real Render deploy remain pending because no push or public deployment was performed.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
@@ -213,6 +221,8 @@ Deployment readiness will require all of the following:
 
 ## Remaining risks
 
+- The Render Blueprint has not created a live service. Render-specific networking, health checks, migrations, and TLS forwarding still require verification after the user deploys it.
+- No Neon project, production database, customer-owned CARTO key, or approved production road provider is configured in the repository.
 - Public or hosted providers can throttle, reject, or become unavailable even when application safeguards work as designed.
 - The production CARTO key must be customer-owned and domain-restricted before deployment.
 - The incident dataset remains unverified demonstration data. Its source, methodology, date, license, and redistribution permission are unknown.

@@ -297,6 +297,21 @@ class ProductionSecuritySettingsTests(SimpleTestCase):
         )
         self.assertEqual(config["SECURE_HSTS_SECONDS"], 0)
 
+    def test_accepts_standard_csrf_trusted_origins_variable(self):
+        config = self.load_settings(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "CSRF_TRUSTED_ORIGINS": "https://safepath.example.com",
+            }
+        )
+
+        self.assertEqual(
+            config["CSRF_TRUSTED_ORIGINS"],
+            ["https://safepath.example.com"],
+        )
+
     def test_proxy_trust_is_explicit(self):
         config = self.load_settings(
             {

@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: safepath
+    repo: https://github.com/K2K22K2K22/SafePath
+    branch: main
+    runtime: python
+    plan: free
+    region: singapore
+    numInstances: 1
+    healthCheckPath: /health/
+    maxShutdownDelaySeconds: 40
+    buildCommand: >-
+      pip install --requirement requirements.txt && python manage.py collectstatic
+      --noinput --ignore "web/css/src/*"
+    startCommand: >-
+      python manage.py migrate --noinput && gunicorn safepath_backend.wsgi:application
+      --config gunicorn.conf.py --bind "0.0.0.0:${PORT:-10000}" --workers 1
+      --timeout 60 --graceful-timeout 30
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DJANGO_TRUST_X_FORWARDED_PROTO
+        value: "True"
+      - key: SAFEPATH_CARTO_API_KEY
+        sync: false
+      - key: SAFEPATH_OSM_API_URL
+        sync: false
+      - key: SAFEPATH_OSM_API_ALLOWED_HOSTS
+        sync: false
+      - key: SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
+        sync: false
+      - key: SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS
+        value: "30"
+      - key: SAFEPATH_GEOCODER_URL
+        value: https://nominatim.openstreetmap.org/search
+      - key: SAFEPATH_GEOCODER_ALLOWED_HOSTS
+        value: nominatim.openstreetmap.org
+      - key: SAFEPATH_GEOCODER_TIMEOUT_SECONDS
+        value: "8"
+      - key: SAFEPATH_GEOCODER_CACHE_MAX_ENTRIES
+        value: "1000"
+      - key: SAFEPATH_GEOCODER_CACHE_TTL_SECONDS
+        value: "86400"
+      - key: SAFEPATH_ROUTE_THROTTLE_RATE
+        value: 20/minute
+      - key: SAFEPATH_GEOCODE_THROTTLE_RATE
+        value: 30/minute
+      - key: SAFEPATH_HEATMAP_THROTTLE_RATE
+        value: 60/minute

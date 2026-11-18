@@ -88,6 +88,14 @@ docker compose up --build
 
 The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy, the dark basemap requires a domain-restricted CARTO key, and route requests require a paid or self-hosted road-data provider explicitly approved in `.env`. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data and the geocoder cache stay in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
+## Render deployment
+
+`render.yaml` configures one native Python web service in Render's Singapore region for the academic demo. It uses Python 3.13.18, one Gunicorn worker, `/health/` health checks, generated Django secret storage, and startup migrations because Render Free services cannot run a pre-deploy command.
+
+Before applying the Blueprint, create an external PostgreSQL database such as Neon, obtain an approved paid or self-hosted Overpass-compatible road provider, and obtain a customer-owned CARTO publishable key. Enter the exact Render hostname, HTTPS CSRF origin, PostgreSQL URL, CARTO key, and road-provider values when Render prompts. Do not commit any of them.
+
+Render Free services use an ephemeral filesystem, support one instance, may spin down after 15 minutes of inactivity, and are not production-ready. Public Nominatim has no availability guarantee. Keep the demo at one instance unless geocoder pacing is moved to shared coordination. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#render-native-deployment) for Neon setup, exact Blueprint steps, validation, and troubleshooting.
+
 ## Configuration
 
 All supported settings are documented in [.env.example](.env.example). Important controls include:
@@ -97,7 +105,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
 | `DJANGO_SECRET_KEY` | unset | Required when debug mode is off; use at least 50 sufficiently random characters |
 | `DJANGO_ALLOWED_HOSTS` | local hosts in debug mode | Exact comma-separated production host names; wildcards are rejected |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | unset | Optional comma-separated exact HTTPS origins for cross-origin requests |
+| `CSRF_TRUSTED_ORIGINS` | unset | Optional comma-separated exact HTTPS origins for cross-origin requests; `DJANGO_CSRF_TRUSTED_ORIGINS` remains a legacy alias |
 | `DJANGO_TRUST_X_FORWARDED_PROTO` | `False` | Trust the proxy protocol header only when a trusted proxy replaces client headers |
 | `DJANGO_SECURE_HSTS_SECONDS` | `0` | HSTS lifetime in seconds; keep disabled until the deployed hostname and HTTPS redirect path are verified |
 | `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | `False` | Include subdomains in HSTS after verifying every subdomain supports HTTPS |
@@ -294,7 +302,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 182 Django tests passed
+- 188 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed

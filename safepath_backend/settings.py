@@ -80,7 +80,11 @@ ALLOWED_HOSTS = list(dict.fromkeys(configured_hosts))
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
-    for origin in (os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS") or "").split(",")
+    for origin in (
+        os.environ.get("CSRF_TRUSTED_ORIGINS")
+        or os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS")
+        or ""
+    ).split(",")
     if origin.strip()
 ]
 if not DEBUG:
@@ -95,7 +99,7 @@ if not DEBUG:
             or "*" in origin
         ):
             raise ImproperlyConfigured(
-                "DJANGO_CSRF_TRUSTED_ORIGINS must contain exact HTTPS origins."
+                "CSRF_TRUSTED_ORIGINS must contain exact HTTPS origins."
             )
 
 SESSION_COOKIE_SECURE = not DEBUG

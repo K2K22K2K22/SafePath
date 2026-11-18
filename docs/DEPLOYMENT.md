@@ -39,7 +39,7 @@ Production startup fails when `DJANGO_SECRET_KEY` is missing, shorter than 50 ch
 python -c 'import secrets; print(secrets.token_urlsafe(64))'
 ```
 
-Set `DJANGO_ALLOWED_HOSTS` to comma-separated exact host names without ports. Wildcard hosts are rejected in production, and loopback hosts are not added automatically. Set `DJANGO_CSRF_TRUSTED_ORIGINS` only for required cross-origin requests, using exact HTTPS origins without paths.
+Set `DJANGO_ALLOWED_HOSTS` to comma-separated exact host names without ports. Wildcard hosts are rejected in production, and loopback hosts are not added automatically. Set `CSRF_TRUSTED_ORIGINS` only for required cross-origin requests, using exact HTTPS origins without paths. `DJANGO_CSRF_TRUSTED_ORIGINS` remains accepted as a legacy alias.
 
 Production mode redirects HTTP to HTTPS and marks session and CSRF cookies secure. Gunicorn's own forwarded-scheme handling is disabled, but the raw header still reaches Django. Django ignores `X-Forwarded-Proto` by default and trusts it only when `DJANGO_TRUST_X_FORWARDED_PROTO=True` is set for a deployment whose trusted reverse proxy removes client-supplied forwarded headers and sets its own. Enable that flag whenever a TLS-terminating proxy fronts the application; otherwise the health probe reports an HTTPS redirect and user requests can enter a redirect loop. Do not expose Gunicorn directly to the public Internet. The included Compose service binds to `127.0.0.1` so only a local proxy can reach it.
 
@@ -130,6 +130,108 @@ Choose one mode for each deployment:
 Do not enable startup migrations when several application instances start from the same release at the same time. The pre-deploy mode prevents concurrent migration attempts. The startup mode is intended only for one application instance. The container accepts only the exact values `true` and `false`; any other value stops startup with exit code 64.
 
 Migrations require a reachable database. They must never run as part of `docker build`.
+
+## Render native deployment
+
+The repository includes `render.yaml` for Render's native Python runtime. The Blueprint uses one Free web service in Singapore, Python 3.13.18, the `main` branch, `/health/` for platform health checks, one Gunicorn worker, and a 40 second shutdown allowance. It does not create a Render PostgreSQL database.
+
+Render's Free web service is an academic demonstration option, not a production deployment. It has one instance, an ephemeral filesystem, no pre-deploy command, and no shell. A service without inbound traffic can spin down after 15 minutes and can take about one minute to start again. The local geocoder cache is therefore disposable. Keep route and session data in external PostgreSQL.
+
+### Required provider and database values
+
+Prepare these values before creating the Blueprint:
+
+| Variable | Required value |
+| --- | --- |
+| `DJANGO_ALLOWED_HOSTS` | Exact Render hostname, without a scheme or port |
+| `CSRF_TRUSTED_ORIGINS` | Exact `https://` origin for the same hostname |
+| `DATABASE_URL` | PostgreSQL URL for the demo database with `sslmode=require`, `verify-ca`, or `verify-full` |
+| `SAFEPATH_CARTO_API_KEY` | Customer-owned, domain-restricted CARTO publishable key |
+| `SAFEPATH_OSM_API_URL` | HTTPS endpoint of the approved paid or self-hosted Overpass-compatible provider |
+| `SAFEPATH_OSM_API_ALLOWED_HOSTS` | Exact host from `SAFEPATH_OSM_API_URL` |
+| `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Same exact provider host, explicitly approved for production |
+
+Render generates `DJANGO_SECRET_KEY` from `generateValue: true`. Do not replace it with a committed value. The Blueprint sets `DJANGO_DEBUG=False`, trusts Render's TLS forwarding header, and provides bounded provider timeouts, cache limits, and API throttle rates. Render supplies `PORT`; the start command binds Gunicorn to that value.
+
+Public Overpass and Nominatim endpoints have no availability guarantee. The production gate rejects known public road providers even when they appear in the approval list. A public demonstration remains blocked until an approved road provider and a real CARTO key are available.
+
+### Neon setup
+
+Use an external PostgreSQL provider such as Neon instead of Render Free PostgreSQL. Render Free PostgreSQL expires after 30 days and is not a durable demo database.
+
+1. Create a Neon project, branch, database, and application role.
+2. Copy the direct PostgreSQL connection string. Do not use the pooled endpoint for the supplied start command because startup migrations can require direct connections.
+3. Keep or add `sslmode=require` in the URL. Remove query options that the application does not support. Percent-encode reserved characters in the password.
+4. Store the complete URL only in Render's environment variable prompt. Do not put it in `render.yaml`, `.env`, a shell command, or a commit.
+
+The URL must have this form:
+
+```text
+postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```
+
+Neon may provide a direct endpoint and a pooled endpoint with a `-pooler` hostname. The direct endpoint is required for the default startup migration flow. A paid Render deployment can run migrations in `preDeployCommand` and can then use a pooled endpoint for application traffic if its PostgreSQL driver and session behavior have been verified.
+
+### Create the Blueprint service
+
+1. Push the reviewed deployment commits to `main`. This preparation does not create or deploy any Render resource.
+2. In the Render dashboard, select **New**, then **Blueprint**, and connect `https://github.com/K2K22K2K22/SafePath`.
+3. Select the `main` branch and review the single `safepath` web service.
+4. Enter each prompted value from the table above. For a service named `safepath`, use `safepath.onrender.com` only if Render assigns that hostname. If the dashboard assigns a different hostname, update both host variables before testing requests.
+5. Apply the Blueprint. Render creates the service, generates the Django secret, installs `requirements.txt`, and collects static files.
+6. Wait for the deploy to finish, then inspect the service logs for migration completion and Gunicorn startup.
+7. Confirm the public hostname from the Render dashboard, then verify:
+
+```bash
+curl -fsS "https://YOUR-HOSTNAME/health/"
+curl -fsS "https://YOUR-HOSTNAME/health/ready/"
+curl -I "https://YOUR-HOSTNAME/"
+```
+
+The first request must return `{"status":"ok"}`. The readiness request must return `{"status":"ready"}`. A static asset request must return HTTP 200 or 304 with its hashed manifest URL.
+
+### Build, migration, and process behavior
+
+The native build command installs only `requirements.txt` and runs:
+
+```bash
+python manage.py collectstatic --noinput --ignore "web/css/src/*"
+```
+
+The committed Tailwind stylesheet and vendored Leaflet files are the static source. No Node build is required during a Render deploy.
+
+The Free start command applies migrations and then starts Gunicorn:
+
+```bash
+python manage.py migrate --noinput
+gunicorn safepath_backend.wsgi:application --config gunicorn.conf.py \
+  --bind "0.0.0.0:${PORT:-10000}" --workers 1 --timeout 60 \
+  --graceful-timeout 30
+```
+
+Free services cannot run `preDeployCommand`. Startup migrations are therefore acceptable only for this single-instance demo. Do not scale the service until migrations move to a paid plan's pre-deploy command or an equivalent single migration job. Moving to a paid plan requires changing the plan, adding `preDeployCommand: python manage.py migrate --noinput`, and removing `python manage.py migrate --noinput` from `startCommand`.
+
+Keep the service at one instance while using public Nominatim. Its file-based pacing lock coordinates workers inside one instance but not separate Render instances. Use an approved geocoder or external shared coordination before scaling.
+
+### Blueprint validation
+
+Validate the file against the current schema before deployment:
+
+```bash
+pip install --requirement requirements-dev.txt
+python scripts/validate_render.py render.yaml
+```
+
+The command fetches `https://render.com/schema/render.yaml.json`, validates every supported field, and fails on an unsupported or malformed Blueprint. The repository also contains a deterministic configuration test.
+
+### Troubleshooting
+
+- A redirect from `/health/` indicates that the forwarded protocol was not recognized. Confirm that `DJANGO_TRUST_X_FORWARDED_PROTO=True` remains set for the Render-only deployment.
+- `DisallowedHost` indicates that `DJANGO_ALLOWED_HOSTS` does not exactly match the hostname used in the request.
+- A database startup error usually means that `DATABASE_URL` is missing, uses a non-PostgreSQL scheme, lacks required TLS, or contains an unsupported query option.
+- `road_provider_unavailable` means that the configured provider is unavailable or that its exact host is not approved. It does not fall back to a different provider.
+- A missing CARTO key or an obvious placeholder causes production startup to fail. Use a real customer-owned key restricted to the deployed domain.
+- The geocoder cache and all other local files disappear after a restart or redeploy. This is expected on Render's ephemeral filesystem.
 
 ## Docker
 
