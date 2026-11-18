@@ -25,7 +25,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes", "on"}
+DJANGO_DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+DEBUG = DJANGO_DEBUG
+SAFEPATH_PRODUCTION_MODE = not DJANGO_DEBUG
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
@@ -323,7 +330,7 @@ SAFEPATH_GRAPH_PADDING_METERS = int(
 )
 SAFEPATH_HTTP_USER_AGENT = os.environ.get(
     "SAFEPATH_HTTP_USER_AGENT",
-    "SAFE Path Django application (https://github.com/LilSuperUser/SafePath)",
+    "SAFE Path Django application (https://github.com/K2K22K2K22/SafePath)",
 )
 SAFEPATH_MAX_GRAPH_EDGES = int(os.environ.get("SAFEPATH_MAX_GRAPH_EDGES", "250000"))
 SAFEPATH_MAX_NODES_EXPLORED = int(
@@ -340,7 +347,15 @@ SAFEPATH_OSM_API_ALLOWED_HOSTS = tuple(
     host.strip()
     for host in os.environ.get(
         "SAFEPATH_OSM_API_ALLOWED_HOSTS",
-        "api.openstreetmap.org",
+        "overpass-api.de",
+    ).split(",")
+    if host.strip()
+)
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get(
+        "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS",
+        "",
     ).split(",")
     if host.strip()
 )
@@ -362,7 +377,7 @@ SAFEPATH_OSM_API_MAX_XML_ELEMENTS = int(
 )
 SAFEPATH_OSM_API_URL = os.environ.get(
     "SAFEPATH_OSM_API_URL",
-    "https://api.openstreetmap.org/api/0.6/map",
+    "https://overpass-api.de/api/interpreter",
 )
 SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS = int(
     os.environ.get("SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS", "30")

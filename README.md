@@ -6,7 +6,7 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 
 ## Highlights
 
-- Real OpenStreetMap road graph with directed edges, one-way rules, access restrictions, node barriers, and consecutive-node edge segments
+- Real OpenStreetMap road graph from a bounded Overpass-compatible read-only source, with directed edges, one-way rules, access restrictions, node barriers, and consecutive-node edge segments
 - Custom Dijkstra and modified A* implementations with bounded searches and admissible distance heuristics
 - Up to four unique routes, including shortest, safest when data coverage supports it, balanced, and genuinely distinct alternatives
 - Deterministic risk scoring from bundled incident records, with unknown safety when a route is not fully covered
@@ -23,7 +23,7 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 | --- | --- |
 | Web application | Django 5.2 templates and native JavaScript |
 | HTTP API | Django REST Framework |
-| Road graph | OSM XML snapshots parsed into an in-memory directed graph |
+| Road graph | Bounded Overpass-compatible OSM XML parsed into an in-memory directed graph |
 | Routing | Custom Dijkstra, modified A*, and penalty-based alternative generation |
 | Risk model | Bundled CSV incidents scored against stored road-edge segments |
 | Map | Leaflet 1.9.4 and Leaflet.heat 0.2.0, both vendored locally |
@@ -31,14 +31,14 @@ The application does not use an LLM, deep learning, FDL, or an external AI provi
 | Django storage | PostgreSQL via `DATABASE_URL`, with SQLite as the local fallback |
 | CI | GitHub Actions on Python 3.13 and Node.js 22 |
 
-SQLite does not store route or incident results. Routing uses the OSM graph and bundled CSV directly. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system, route-flow, risk-flow, frontend-state, and deployment diagrams.
+SQLite does not store route or incident results. Routing uses the OSM graph and bundled CSV directly. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system, route-flow, risk-flow, frontend-state, and deployment diagrams, and [docs/DATA_PROVIDERS.md](docs/DATA_PROVIDERS.md) for external provider policy.
 
 ## Requirements
 
 - Python 3.13
 - Node.js 22
 - npm
-- Internet access for OSM road data, Nominatim geocoding, and map tiles
+- Internet access for an Overpass-compatible road provider, Nominatim geocoding, and map tiles
 - Docker with Compose only if using the container workflow
 
 Python 3.13 is the supported runtime used by the Docker image and CI. Some pinned binary wheels do not support Python 3.15.
@@ -54,7 +54,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-For local development, keep `DJANGO_DEBUG=True`. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and startup fails when either requirement is missing.
+For local development, keep `DJANGO_DEBUG=True`. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and startup fails when either requirement is missing. Production route requests also require a paid or self-hosted Overpass-compatible provider whose exact host appears in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`.
 
 Install frontend tooling and build the committed stylesheet:
 
@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
+The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy and route requests require a paid or self-hosted road-data provider explicitly approved in `.env`. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -120,10 +120,13 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `SAFEPATH_MAX_NODES_EXPLORED` | `100000` | Per-search exploration limit |
 | `SAFEPATH_GRAPH_CACHE_MAX_ENTRIES` | `8` | Maximum cached OSM graphs |
 | `SAFEPATH_GRAPH_CACHE_TTL_SECONDS` | `86400` | OSM graph cache lifetime |
+| `SAFEPATH_OSM_API_URL` | `https://overpass-api.de/api/interpreter` | Overpass-compatible road provider; public endpoint is development-only |
+| `SAFEPATH_OSM_API_ALLOWED_HOSTS` | `overpass-api.de` | Exact HTTPS hosts allowed for road data |
+| `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | unset | Exact paid or self-hosted provider hosts explicitly approved for production |
 | `SAFEPATH_OSM_API_MAX_BYTES` | `25000000` | Maximum total downloaded OSM bytes per load |
 | `SAFEPATH_OSM_API_MAX_REQUESTS` | `16` | Maximum OSM requests per load |
 | `SAFEPATH_OSM_API_MAX_SPLIT_DEPTH` | `3` | Maximum bounding-box split depth |
-| `SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS` | `30` | Aggregate OSM load deadline |
+| `SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS` | `30` | Road-data acquisition deadline checked between response reads |
 
 ## HTTP API
 
@@ -186,7 +189,7 @@ Returns `{"status": "ok"}` when Django can serve requests.
 
 ### Directed road graph
 
-OSM ways are split into edges between consecutive nodes. The parser:
+Overpass-compatible OSM ways are split into edges between consecutive nodes. The parser:
 
 - Keeps only drivable highway classes
 - Applies access hierarchy and removes restricted or blocked access
@@ -278,7 +281,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 92 Django tests passed
+- 110 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed for 35 source files
@@ -295,7 +298,7 @@ GitHub Actions runs the same Python, frontend, and browser gates, then builds th
 ```text
 Model/
   views.py                    REST API endpoints
-  utils/osm_graph.py          OSM ingestion, limits, directed graph conversion
+  utils/osm_graph.py          Bounded Overpass ingestion, limits, directed graph conversion
   utils/risk_scoring.py       Incident validation, proximity exposure, coverage
   utils/routing.py            Dijkstra and modified A* search core
   utils/route_service.py      Route roles, alternatives, labels, metrics
@@ -310,6 +313,7 @@ web/
 docs/
   IMPROVEMENT_ROADMAP.md      Original audit and phased plan
   ARCHITECTURE.md             Architecture and flow diagrams
+  DATA_PROVIDERS.md           External provider policy and limits
 ```
 
 ## Delivery phases
@@ -339,7 +343,7 @@ docs/
 - Map tiles remain network-dependent even though map libraries are vendored locally.
 - The bundled dataset has finite geographic coverage. Routes that are not fully covered by it are reported as unrated rather than safe.
 - OSM turn restrictions and relation-based restrictions are not applied, so routes may ignore valid turn bans and differ from production routers.
-- The included Docker configuration runs Gunicorn as a non-root user, but public deployment still requires an external production database and provider credentials.
+- The included Docker configuration runs Gunicorn as a non-root user, but public deployment still requires an external production database and production provider configuration.
 - SAFE PATH has no custom authentication workflow, user accounts, personalization, live incident reporting, or incident moderation.
 - No external LLM, deep learning model, FDL component, or fabricated fallback data is present.
 

@@ -41,6 +41,93 @@ class ProductionCheckTests(SimpleTestCase):
         self.assertIn("Production configuration error", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_rejects_public_road_data_provider(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_OSM_API_URL": "https://overpass-api.de/api/interpreter",
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "overpass-api.de",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "overpass-api.de",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("paid or self-hosted", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_requires_explicit_production_road_data_approval(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_OSM_API_URL": (
+                    "https://road-provider.internal/api/interpreter"
+                ),
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "road-provider.internal",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("explicitly approved", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_accepts_explicitly_approved_private_road_data_provider(self):
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "DATABASE_URL": (
+                    "postgresql://safepath:safepath@127.0.0.1:5432/safepath"
+                    "?sslmode=require"
+                ),
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_OSM_API_URL": (
+                    "https://road-provider.internal/api/interpreter"
+                ),
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "road-provider.internal",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "road-provider.internal",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Production checks passed", result.stdout)
+
 
 class GunicornConfigurationTests(SimpleTestCase):
     def load_config(self, environment):

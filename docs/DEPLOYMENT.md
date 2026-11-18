@@ -36,14 +36,20 @@ Run the production checks with the same environment used by the deployment:
 DJANGO_DEBUG=False \
 DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
+SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
 python manage.py check --deploy
 DJANGO_DEBUG=False \
 DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
 DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+SAFEPATH_OSM_API_URL="https://road-provider.example/api/interpreter" \
+SAFEPATH_OSM_API_ALLOWED_HOSTS="road-provider.example" \
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS="road-provider.example" \
 python scripts/check_production.py
 ```
 
-Django reports `security.W004` while HSTS is deliberately disabled. The production check script permits only the HSTS warnings `security.W004`, `security.W005`, and `security.W021`; every other warning or error fails the gate.
+Django reports `security.W004` while HSTS is deliberately disabled. The production check script permits only the HSTS warnings `security.W004`, `security.W005`, and `security.W021`; every other warning or error fails the gate. It also requires explicit production approval for the road-data provider and rejects known public Overpass hosts.
 
 ## Static assets
 
@@ -72,6 +78,20 @@ Production mode rejects a PostgreSQL URL without `sslmode=require`, `verify-ca`,
 
 PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Run migrations against the same database before starting the release.
 
+## Road data provider
+
+The route loader uses an Overpass-compatible read-only endpoint. Configure all three values:
+
+```bash
+SAFEPATH_OSM_API_URL='https://road-provider.example/api/interpreter'
+SAFEPATH_OSM_API_ALLOWED_HOSTS='road-provider.example'
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
+```
+
+The public `overpass-api.de` endpoint is a development fallback only. It has no availability guarantee and must not be used as the production road-data backend. Production requests require the provider host to appear in the explicit production approval list and reject known public Overpass hosts. `scripts/check_production.py` enforces the same requirement. The URL must use HTTPS, the host must appear in the exact allowlist, redirects are rejected, and URL credentials and non-standard ports are rejected. Listing a production host asserts that the operator has a paid or self-hosted agreement for it.
+
+Each request uses fixed bounded Overpass QL. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, XML elements, graph edges, and aggregate time. Provider requests are serialized within one process, and graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
+
 ## Migration modes
 
 Choose one mode for each deployment:
@@ -95,7 +115,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Compose starts Gunicorn on `PORT` (default `8000`), binds it to `127.0.0.1`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change. The container health probe sends the first configured production host instead of an implicit loopback host.
+Compose starts Gunicorn on `PORT` (default `8000`), binds it to `127.0.0.1`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change. The container health probe sends the first configured production host instead of an implicit loopback host. Compose uses production security settings, so route requests also require a paid or self-hosted road-data provider explicitly approved in `.env`.
 
 Check the service:
 

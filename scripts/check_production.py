@@ -23,6 +23,14 @@ def main():
     except ImproperlyConfigured as error:
         print(f"Production configuration error: {error}", file=sys.stderr)
         return 2
+    from Model.utils.osm_graph import RoadDataUnavailable, _validated_osm_url
+
+    try:
+        _validated_osm_url(require_private=True)
+    except RoadDataUnavailable as error:
+        print(f"Production configuration error: {error}", file=sys.stderr)
+        return 2
+
     issues = run_checks(include_deployment_checks=True)
     unexpected = [issue for issue in issues if issue.id not in ALLOWED_HSTS_WARNINGS]
     if unexpected:

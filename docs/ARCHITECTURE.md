@@ -20,7 +20,7 @@ flowchart LR
         Risk[Incident risk scorer]
     end
 
-    OSM[OpenStreetMap API]
+    OSM[Overpass-compatible road provider]
     Geo[Nominatim geocoder]
     CSV[Bundled incident CSV]
     Tiles[OSM and CARTO tiles]
@@ -32,7 +32,7 @@ flowchart LR
     Service --> Graph
     Service --> Risk
     Risk --> CSV
-    OSM -->|Validated XML snapshots| Graph
+    OSM -->|Bounded read-only XML| Graph
     API -->|HTTPS, restricted host| Geo
     User -->|HTTPS map tiles| Tiles
 ```
@@ -46,7 +46,7 @@ The browser receives route geometry and metrics through relative API requests. I
 | HTTP views | `Model/views.py` | Coordinate validation, API serialization, throttling, provider errors, health response |
 | Route service | `Model/utils/route_service.py` | Candidate generation, objective labels, diversity filtering, route metrics |
 | Search core | `Model/utils/routing.py` | Dijkstra, modified A*, path reconstruction, cost validation, exploration limits |
-| Graph builder | `Model/utils/osm_graph.py` | OSM acquisition, XML limits, access rules, one-way handling, barriers, caching |
+| Graph builder | `Model/utils/osm_graph.py` | Bounded Overpass acquisition, XML limits, access rules, one-way handling, barriers, caching |
 | Graph model | `Model/utils/road_graph.py` | Nodes, directed edges, endpoint-segment geometry, distance validation, adjacency indexes |
 | Risk scorer | `Model/utils/risk_scoring.py` | Incident validation, spatial index, proximity exposure, risk conversion, coverage |
 | Incident loader | `Model/utils/crime_loader.py` | Read and normalize bundled CSV columns |
@@ -88,9 +88,9 @@ Invalid or missing coordinates return HTTP 400. Requests exceeding the configure
 
 ### 4.2 OSM acquisition and graph construction
 
-The road loader builds a padded bounding box around the requested points. It uses the configured HTTPS OSM API host and rejects redirects, credentials in URLs, non-standard ports, excessive response sizes, excessive XML depth, excessive element counts, and prohibited DTD or entity declarations.
+The road loader builds a padded bounding box around the requested points. It sends one fixed bounded Overpass QL query for drivable highway classes to the configured HTTPS provider host and rejects redirects, credentials in URLs, non-standard ports, unapproved or known public providers in production, excessive response sizes, non-UTF-8 documents, excessive XML depth, excessive element counts, and prohibited DTD or entity declarations. Provider requests are serialized within one application process.
 
-A single request can be split into smaller bounding boxes. The request count, aggregate byte count, split depth, and overall deadline are bounded.
+A single request can be split into smaller bounding boxes only when the provider explicitly reports an oversized area or element count. The request count, aggregate byte count, split depth, and acquisition deadline checked between response reads are bounded.
 
 For each accepted OSM way, the parser:
 
@@ -219,14 +219,14 @@ sequenceDiagram
     participant B as Browser
     participant G as Geocode API
     participant R as Route API
-    participant O as OSM API
+    participant O as Road data provider
     participant D as Bundled CSV
 
     B->>G: GET /api/geocode/?q=...
     G-->>B: Valid location results
     B->>R: GET /api/routes/?start_lat=...
-    R->>O: Bounded bbox request
-    O-->>R: OSM XML
+    R->>O: Bounded Overpass query
+    O-->>R: Read-only OSM XML
     R->>D: Read validated incidents
     D-->>R: Incident records
     R->>R: Build graph, score edges, search paths
@@ -286,7 +286,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 | --- | --- |
 | Browser to Django | Relative API paths, DRF parsing, coordinate validation, scoped throttling, exact production hosts, HTTPS redirect, secure cookies, no HTTP `Origin` enforcement |
 | Proxy to Django | Gunicorn forwarded-scheme handling disabled; explicit Django opt-in for `X-Forwarded-Proto`, only behind a proxy that replaces client-supplied headers |
-| Django to OSM | HTTPS host allowlist, no redirects, stream byte limit, request limit, depth limit, DTD and entity rejection |
+| Django to OSM | HTTPS host allowlist, explicit production provider approval, no redirects, stream byte limit, request limit, depth limit, UTF-8 and DTD or entity rejection |
 | Django to Nominatim | HTTPS host allowlist, no redirects, connect and read timeouts, response coordinate validation |
 | Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks |
 | Routing search | Finite edge values, non-negative beta, endpoint validation, bounded node exploration |

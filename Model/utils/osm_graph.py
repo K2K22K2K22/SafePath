@@ -48,6 +48,36 @@ RESTRICTED_ACCESS_VALUES = {
     "parking",
     "permit",
 }
+PUBLIC_OVERPASS_HOSTS = frozenset(
+    {
+        "ethiopia.overpass.openplaceguide.org",
+        "gall.openstreetmap.de",
+        "lambert.openstreetmap.de",
+        "lz4.overpass-api.de",
+        "maps.mail.ru",
+        "overpass-api.de",
+        "overpass.atownsend.org.uk",
+        "overpass.kumi.systems",
+        "overpass.maprva.org",
+        "overpass.openstreetmap.fr",
+        "overpass.osm.ch",
+        "overpass.osm.jp",
+        "overpass.private.coffee",
+        "ovp.dresel.systems",
+        "z.overpass-api.de",
+    }
+)
+OVERPASS_HIGHWAY_PATTERN = (
+    "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|"
+    "living_street|service|road)(_link)?$"
+)
+OVERPASS_OVERSIZED_ERROR_MARKERS = (
+    "exceeded the maximum allowed size",
+    "please use a smaller area",
+    "too large",
+    "too many elements",
+)
+MAX_PROVIDER_ERROR_BYTES = 64 * 1024
 ALLOWED_ACCESS_VALUES = {
     "yes",
     "true",
@@ -74,6 +104,7 @@ _GRAPH_LOAD_LOCKS: weakref.WeakValueDictionary[
     tuple[float, float, float, float], threading.Lock
 ] = weakref.WeakValueDictionary()
 _GRAPH_LOAD_LOCKS_GUARD = threading.Lock()
+_ROAD_PROVIDER_REQUEST_LOCK = threading.RLock()
 
 
 class RoadDataUnavailable(Exception):
@@ -198,53 +229,103 @@ def _fetch_osm_xml(bbox, budget=None, depth=0):
         return _fetch_split_bbox(bbox, budget, depth + 1)
 
     url = _validated_osm_url()
+    query = _overpass_query(bbox)
     budget.register_request()
-    remaining = budget.remaining_seconds()
-    timeout = (
-        max(min(10.0, remaining), 0.1),
-        max(min(settings.SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS, remaining), 0.1),
-    )
-    left, bottom, right, top = bbox
+    chunks = []
+    split_required = False
 
     try:
-        with requests.get(
-            url,
-            params={"bbox": f"{left},{bottom},{right},{top}"},
-            headers={"User-Agent": settings.SAFEPATH_HTTP_USER_AGENT},
-            timeout=timeout,
-            stream=True,
-            allow_redirects=False,
-        ) as response:
-            if 300 <= response.status_code < 400:
-                raise RoadDataUnavailable("Road data provider redirects were rejected.")
-            if response.status_code == 400:
-                return _fetch_split_bbox(bbox, budget, depth + 1)
-            response.raise_for_status()
-
-            content_length = response.headers.get("Content-Length")
-            if content_length:
-                try:
-                    if int(content_length) > settings.SAFEPATH_OSM_API_MAX_BYTES:
-                        raise RoadDataUnavailable(
-                            "Road data response exceeded the allowed size."
-                        )
-                except ValueError as error:
+        with _ROAD_PROVIDER_REQUEST_LOCK:
+            budget.check_deadline()
+            remaining = budget.remaining_seconds()
+            timeout = (
+                max(min(10.0, remaining), 0.1),
+                max(min(settings.SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS, remaining), 0.1),
+            )
+            with requests.get(
+                url,
+                params={"data": query},
+                headers={
+                    "Accept": "application/xml",
+                    "User-Agent": settings.SAFEPATH_HTTP_USER_AGENT,
+                },
+                timeout=timeout,
+                stream=True,
+                allow_redirects=False,
+            ) as response:
+                if 300 <= response.status_code < 400:
                     raise RoadDataUnavailable(
-                        "Road data provider returned an invalid content length."
-                    ) from error
+                        "Road data provider redirects were rejected."
+                    )
 
-            chunks = []
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                budget.check_deadline()
-                if not chunk:
-                    continue
-                budget.add_bytes(len(chunk))
-                chunks.append(chunk)
-            return (b"".join(chunks),)
+                content_length = response.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        if int(content_length) > settings.SAFEPATH_OSM_API_MAX_BYTES:
+                            raise RoadDataUnavailable(
+                                "Road data response exceeded the allowed size."
+                            )
+                    except ValueError as error:
+                        raise RoadDataUnavailable(
+                            "Road data provider returned an invalid content length."
+                        ) from error
+
+                if response.status_code == 400:
+                    error_text = _read_provider_error(response, budget)
+                    split_required = _overpass_error_requires_split(error_text)
+                    if not split_required:
+                        raise RoadDataUnavailable(
+                            "Road data provider rejected the query."
+                        )
+                else:
+                    response.raise_for_status()
+                    for chunk in response.iter_content(chunk_size=64 * 1024):
+                        budget.check_deadline()
+                        if not chunk:
+                            continue
+                        budget.add_bytes(len(chunk))
+                        chunks.append(chunk)
     except RoadDataUnavailable:
         raise
     except requests.RequestException as error:
         raise RoadDataUnavailable("Road data is temporarily unavailable.") from error
+
+    if split_required:
+        return _fetch_split_bbox(bbox, budget, depth + 1)
+    return (b"".join(chunks),)
+
+
+def _read_provider_error(response, budget):
+    chunks = []
+    bytes_read = 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        budget.check_deadline()
+        if not chunk:
+            continue
+        bytes_read += len(chunk)
+        if bytes_read > MAX_PROVIDER_ERROR_BYTES:
+            raise RoadDataUnavailable(
+                "Road data provider error response was too large."
+            )
+        budget.add_bytes(len(chunk))
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace").lower()
+
+
+def _overpass_error_requires_split(error_text):
+    return any(marker in error_text for marker in OVERPASS_OVERSIZED_ERROR_MARKERS)
+
+
+def _overpass_query(bbox):
+    left, bottom, right, top = bbox
+    return (
+        "[out:xml][timeout:25][maxsize:268435456];\n"
+        f'(way["highway"~"{OVERPASS_HIGHWAY_PATTERN}"]'
+        f"({bottom:.7f},{left:.7f},{top:.7f},{right:.7f});\n"
+        ">;\n"
+        ");\n"
+        "out body;"
+    )
 
 
 def _fetch_split_bbox(bbox, budget, depth):
@@ -356,13 +437,25 @@ def _build_graph_from_xml(osm_xml):
     return graph
 
 
-def _parse_osm_document(document):
-    if not isinstance(document, bytes):
-        raise RoadDataUnavailable("Road data document must be bytes.")
-    if re.search(rb"<!\s*(DOCTYPE|ENTITY)", document, flags=re.IGNORECASE):
+def _validate_utf8_document(document):
+    try:
+        text = document.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RoadDataUnavailable(
+            "Road data document must be UTF-8 encoded."
+        ) from error
+    if "\x00" in text:
+        raise RoadDataUnavailable("Road data document must be UTF-8 encoded.")
+    if re.search(r"<!\s*(DOCTYPE|ENTITY)", text, flags=re.IGNORECASE):
         raise RoadDataUnavailable(
             "Road data document contains prohibited XML declarations."
         )
+
+
+def _parse_osm_document(document):
+    if not isinstance(document, bytes):
+        raise RoadDataUnavailable("Road data document must be bytes.")
+    _validate_utf8_document(document)
 
     coordinates = {}
     node_tags = {}
@@ -390,7 +483,7 @@ def _parse_osm_document(document):
             element_count += 1
             if element_count > settings.SAFEPATH_OSM_API_MAX_XML_ELEMENTS:
                 raise RoadDataUnavailable("Road data XML exceeded the element limit.")
-            if element.tag == "error":
+            if element.tag in {"error", "remark"}:
                 raise RoadDataUnavailable(
                     "Road data provider returned a partial response."
                 )
@@ -603,21 +696,55 @@ def _nearest_candidates(graph, latitude, longitude):
     )[: settings.SAFEPATH_SNAP_CANDIDATE_LIMIT]
 
 
-def _validated_osm_url():
+def _normalized_hostname(hostname):
+    if not hostname:
+        return ""
+    host = hostname.strip().rstrip(".").lower()
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return ""
+
+
+def _validated_osm_url(require_private=None):
     url = settings.SAFEPATH_OSM_API_URL
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as error:
+        raise RoadDataUnavailable("Road data provider URL is invalid.") from error
+    normalized_hostname = _normalized_hostname(hostname)
     allowed_hosts = {
-        host.strip().lower() for host in settings.SAFEPATH_OSM_API_ALLOWED_HOSTS
+        _normalized_hostname(host) for host in settings.SAFEPATH_OSM_API_ALLOWED_HOSTS
     }
     if (
         parsed.scheme != "https"
-        or parsed.hostname is None
-        or parsed.hostname.lower() not in allowed_hosts
+        or not normalized_hostname
+        or normalized_hostname not in allowed_hosts
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.port not in {None, 443}
+        or port not in {None, 443}
     ):
         raise RoadDataUnavailable("Road data provider URL is not allowed.")
+    require_private = (
+        settings.SAFEPATH_PRODUCTION_MODE
+        if require_private is None
+        else require_private
+    )
+    if require_private:
+        if normalized_hostname in PUBLIC_OVERPASS_HOSTS:
+            raise RoadDataUnavailable(
+                "Production requires a paid or self-hosted road data provider."
+            )
+        production_allowed_hosts = {
+            _normalized_hostname(host)
+            for host in settings.SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
+        }
+        if normalized_hostname not in production_allowed_hosts:
+            raise RoadDataUnavailable(
+                "Production road data provider must be explicitly approved."
+            )
     return url
 
 

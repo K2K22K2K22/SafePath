@@ -58,6 +58,10 @@ Commit `c1638f5` added `DATABASE_URL` support through `dj-database-url`, Postgre
 
 Production settings now require a strong secret and exact host names, redirect HTTP to HTTPS, mark session and CSRF cookies secure, validate trusted CSRF origins, and keep HSTS disabled by default. Forwarded-protocol trust is disabled unless explicitly enabled behind a controlled proxy, and Compose binds the application to loopback. Health and static-asset probes use an explicit host header so they work without weakening the production host allowlist. The production check gate permits only the documented, deferred HSTS warnings and fails on every other deployment warning or error. The final local matrix passed 92 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Podman rebuilt the image and verified static collection, migrations, non-root Gunicorn, trusted and untrusted forwarded-protocol behavior, the health probe, volume ownership repair, and every manifest, CSS reference, and gzip response. Native Docker and remote CI remain required for final runtime evidence.
 
+## Phase 5 road data provider
+
+The road loader now sends fixed, bounded Overpass QL for drivable road classes to an explicitly configured HTTPS host instead of calling the OpenStreetMap editing or Map API. Public Overpass remains a low-volume development fallback only. Production route requests require an exact host in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`, and the production check script enforces the same rule. Known public providers remain rejected even when listed. Canonical host comparison, UTF-8-only XML, explicit oversized-error splitting, and the existing area, request, byte, deadline, split, XML, and graph limits remain active. Provider requests are serialized within one process. `docs/DATA_PROVIDERS.md` records configuration, limits, caching, licensing, attribution, failure behavior, and the multi-instance constraint. The Phase 5 local matrix passed 110 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. A fresh Podman image build and runtime verified the provider configuration, migrations, health probe, and graceful stop. Live requests to two public Overpass instances timed out from this environment, so public provider response availability remains unverified.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files
@@ -104,7 +108,7 @@ Gaps include:
 
 ### External service dependencies
 
-- Road data comes from `https://api.openstreetmap.org/api/0.6/map`, an editing API endpoint rather than a read-only production road service.
+- At baseline, road data came from `https://api.openstreetmap.org/api/0.6/map`, an editing API endpoint rather than a read-only production road service.
 - Public Nominatim receives geocoding requests. The DRF throttle is process-local and does not enforce the public provider's application-wide one request per second policy.
 - Geocoder results are not cached.
 - OpenStreetMap standard tiles and CARTO dark tiles are loaded from public providers.
