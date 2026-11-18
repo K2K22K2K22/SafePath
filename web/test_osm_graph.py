@@ -275,6 +275,8 @@ class OSMGraphTests(SimpleTestCase):
             "api.spainip.es",
             "maps.mail.ru",
             "overpass-api.de",
+            "overpass-api.openhistoricalmap.org",
+            "overpass.nextgis.com",
             "ovp.dresel.systems",
         ):
             with self.subTest(host=host):
