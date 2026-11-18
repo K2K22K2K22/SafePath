@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from shapely import LineString, Point
 from shapely.geometry import box
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from .crime_loader import load_crime_data
@@ -15,8 +16,8 @@ MAX_SEVERITY = 5
 @dataclass(frozen=True)
 class EdgeRiskScores:
     scores: dict[str, float]
-    covered_edge_ids: frozenset[str]
-    coverage_bounds: tuple[float, float, float, float] | None
+    proximity_covered_lengths_meters: dict[str, float]
+    coverage_radius_meters: int
 
     def __getitem__(self, edge_id):
         return self.scores[edge_id]
@@ -35,17 +36,17 @@ class RiskScorer:
 
         data = load_crime_data() if incidents is None else incidents
         self.radius_meters = float(radius_meters)
+        self.coverage_radius_meters = int(self.radius_meters)
         self.incidents = self._valid_incidents(data)
-        self.coverage_bounds = self._coverage_bounds()
 
     def score_edges(self, edges):
         if not edges:
-            return EdgeRiskScores({}, frozenset(), self.coverage_bounds)
+            return EdgeRiskScores({}, {}, self.coverage_radius_meters)
         if not self.incidents:
             return EdgeRiskScores(
                 {edge_id: 0.0 for edge_id in edges},
-                frozenset(),
-                self.coverage_bounds,
+                {edge_id: 0.0 for edge_id in edges},
+                self.coverage_radius_meters,
             )
 
         reference_lat = sum(item[1] for item in self.incidents) / len(self.incidents)
@@ -55,17 +56,12 @@ class RiskScorer:
         ]
         tree = STRtree(incident_points)
         scores = {}
-        covered_edge_ids = set()
-        coverage_area = self._coverage_area()
+        proximity_covered_lengths_meters = {}
 
         for edge_id, edge in edges.items():
             line = LineString(
                 [self._project(lon, lat, reference_lat) for lat, lon in edge.geometry]
             )
-            geographic_line = LineString([(lon, lat) for lat, lon in edge.geometry])
-            if coverage_area is not None and coverage_area.intersects(geographic_line):
-                covered_edge_ids.add(edge_id)
-
             search_area = box(
                 line.bounds[0] - self.radius_meters,
                 line.bounds[1] - self.radius_meters,
@@ -73,19 +69,30 @@ class RiskScorer:
                 line.bounds[3] + self.radius_meters,
             )
             exposure = 0.0
+            covered_parts = []
 
             for index in tree.query(search_area):
                 distance = line.distance(incident_points[index])
                 if distance <= self.radius_meters:
                     severity = self.incidents[index][2]
                     exposure += severity * (1 - distance / self.radius_meters)
+                    covered_parts.append(
+                        line.intersection(
+                            incident_points[index].buffer(self.radius_meters)
+                        )
+                    )
 
             scores[edge_id] = risk_from_exposure(exposure)
+            proximity_covered_lengths_meters[edge_id] = self._covered_length_meters(
+                line,
+                covered_parts,
+                edge.distance_meters,
+            )
 
         return EdgeRiskScores(
             scores,
-            frozenset(covered_edge_ids),
-            self.coverage_bounds,
+            proximity_covered_lengths_meters,
+            self.coverage_radius_meters,
         )
 
     @staticmethod
@@ -130,23 +137,15 @@ class RiskScorer:
         y = math.radians(lat) * EARTH_RADIUS_METERS
         return x, y
 
-    def _coverage_bounds(self):
-        if not self.incidents:
-            return None
-        longitudes = [incident[0] for incident in self.incidents]
-        latitudes = [incident[1] for incident in self.incidents]
-        return (
-            min(longitudes),
-            min(latitudes),
-            max(longitudes),
-            max(latitudes),
+    @staticmethod
+    def _covered_length_meters(line, covered_parts, edge_distance_meters):
+        if not covered_parts or line.length <= 0:
+            return 0.0
+        covered = (
+            covered_parts[0] if len(covered_parts) == 1 else unary_union(covered_parts)
         )
-
-    def _coverage_area(self):
-        if self.coverage_bounds is None:
-            return None
-        left, bottom, right, top = self.coverage_bounds
-        return box(left, bottom, right, top)
+        fraction = min(1.0, max(0.0, covered.length / line.length))
+        return edge_distance_meters * fraction
 
 
 def risk_from_exposure(exposure):

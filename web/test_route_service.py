@@ -46,14 +46,21 @@ def build_three_route_graph():
 class RouteServiceTests(SimpleTestCase):
     def setUp(self):
         self.graph = build_three_route_graph()
-        self.risks = {
-            "A-B": 0.4,
-            "B-D": 0.4,
-            "A-C": 0.0,
-            "C-D": 0.0,
-            "A-E": 0.2,
-            "E-D": 0.2,
-        }
+        self.risks = EdgeRiskScores(
+            {
+                "A-B": 0.4,
+                "B-D": 0.4,
+                "A-C": 0.0,
+                "C-D": 0.0,
+                "A-E": 0.2,
+                "E-D": 0.2,
+            },
+            {
+                edge_id: edge.distance_meters
+                for edge_id, edge in self.graph.edges.items()
+            },
+            200,
+        )
 
     def test_returns_distinct_routes_with_accurate_metrics(self):
         options = generate_route_options(self.graph, "A", "D", self.risks)
@@ -181,8 +188,8 @@ class RouteServiceTests(SimpleTestCase):
     def test_uncovered_route_has_unknown_safety_and_no_safest_label(self):
         risks = EdgeRiskScores(
             {edge_id: 0.0 for edge_id in self.graph.edges},
-            frozenset(),
-            None,
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+            200,
         )
 
         options = generate_route_options(self.graph, "A", "D", risks)
@@ -192,3 +199,80 @@ class RouteServiceTests(SimpleTestCase):
         self.assertTrue(all(option.risk_score is None for option in options))
         self.assertTrue(all(option.safety_score is None for option in options))
         self.assertTrue(all(option.risk_level == "unknown" for option in options))
+
+    def test_plain_risk_mapping_does_not_imply_coverage(self):
+        options = generate_route_options(
+            self.graph,
+            "A",
+            "D",
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+        )
+
+        self.assertFalse(any("safest" in option.labels for option in options))
+        self.assertTrue(all(option.risk_score is None for option in options))
+        self.assertTrue(
+            all(option.incident_coverage_ratio == 0.0 for option in options)
+        )
+
+    def test_route_ratio_does_not_hide_a_gap_in_one_edge(self):
+        risks = EdgeRiskScores(
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+            {
+                "A-B": 99.9,
+                "B-D": 100.0,
+                "A-C": 0.0,
+                "C-D": 0.0,
+                "A-E": 0.0,
+                "E-D": 0.0,
+            },
+            200,
+        )
+
+        options = generate_route_options(self.graph, "A", "D", risks)
+        shortest = next(option for option in options if "shortest" in option.labels)
+
+        self.assertGreater(shortest.incident_coverage_ratio, 0.999)
+        self.assertIsNone(shortest.risk_score)
+        self.assertFalse(any("safest" in option.labels for option in options))
+
+    def test_partially_covered_route_has_unknown_safety(self):
+        risks = EdgeRiskScores(
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+            {
+                "A-B": 100.0,
+                "B-D": 50.0,
+                "A-C": 0.0,
+                "C-D": 0.0,
+                "A-E": 0.0,
+                "E-D": 0.0,
+            },
+            200,
+        )
+
+        options = generate_route_options(self.graph, "A", "D", risks)
+        shortest = next(option for option in options if "shortest" in option.labels)
+
+        self.assertEqual(shortest.incident_coverage_ratio, 0.75)
+        self.assertIsNone(shortest.risk_score)
+        self.assertFalse(any("safest" in option.labels for option in options))
+
+    def test_fully_covered_zero_risk_route_can_receive_safest_label(self):
+        risks = EdgeRiskScores(
+            {edge_id: 0.0 for edge_id in self.graph.edges},
+            {
+                edge_id: edge.distance_meters
+                for edge_id, edge in self.graph.edges.items()
+            },
+            200,
+        )
+
+        options = generate_route_options(self.graph, "A", "D", risks)
+        safest = next(option for option in options if "safest" in option.labels)
+
+        self.assertEqual(safest.risk_score, 0.0)
+        self.assertEqual(safest.safety_score, 100)
+        self.assertEqual(safest.incident_coverage_ratio, 1.0)
+        self.assertIn(
+            "Lowest modeled risk among the generated, eligible routes.",
+            safest.explanation,
+        )

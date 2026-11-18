@@ -49,6 +49,9 @@ test("keeps the heatmap independent from route layers", async ({ page }) => {
   await expect(page.locator(".leaflet-heatmap-layer")).toHaveCount(1);
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
   await expect(page.locator("#heatmap-toggle")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#heatmap-status")).toContainText(
+    "unverified demonstration records",
+  );
 
   await page.getByRole("button", { name: "Incident heatmap" }).click();
 
@@ -63,7 +66,7 @@ test("shows an empty heatmap state without creating a layer", async ({ page }) =
   await page.getByRole("button", { name: "Incident heatmap" }).click();
 
   await expect(page.locator("#heatmap-status")).toHaveText(
-    "No bundled incident records are available.",
+    "No unverified demonstration incident records are available.",
   );
   await expect(page.locator(".leaflet-heatmap-layer")).toHaveCount(0);
 });
@@ -82,6 +85,9 @@ test("switches map tiles without losing route selection", async ({ page }) => {
     "route-2",
   );
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
+  await expect(page.locator("[data-route-coverage]").first()).toContainText(
+    "Record-proximity coverage: 100%",
+  );
   await expect(page.locator(".leaflet-tile-pane img").first()).toHaveAttribute(
     "src",
     /basemaps\.cartocdn\.com\/rastertiles\/dark_all\/\d+\/\d+\/\d+\.png\?key=test-carto-key/,

@@ -251,6 +251,17 @@ function recordScoreLabel(route) {
     return `${route.safety_score}/100`;
 }
 
+function coverageLabel(route) {
+    if (!Number.isFinite(route.incident_coverage_ratio)) {
+        return "Record-proximity coverage unavailable.";
+    }
+    const percentage = Math.round(route.incident_coverage_ratio * 100);
+    if (route.risk_data_available) {
+        return `Record-proximity coverage: ${percentage}% (all route edges covered).`;
+    }
+    return `Record-proximity coverage: ${percentage}%. Safety estimate unavailable because route coverage is incomplete.`;
+}
+
 function createBadge(label) {
     const badge = document.createElement("span");
     const toneClasses = {
@@ -283,6 +294,7 @@ function renderRouteCards(routes) {
         card.querySelector("[data-route-safety]").textContent = recordScoreLabel(route);
         card.querySelector("[data-route-risk]").textContent = riskLabel(route);
         card.querySelector("[data-route-explanation]").textContent = route.explanation;
+        card.querySelector("[data-route-coverage]").textContent = coverageLabel(route);
         card.querySelector("[data-route-algorithm]").textContent =
             route.algorithm === "modified_astar" ? "Modified A* objective" : "Dijkstra objective";
         button.addEventListener("click", () => selectRoute(route.id));
@@ -441,13 +453,13 @@ async function toggleHeatmap() {
 
     state.heatmapLoading = true;
     elements.heatmapToggle.disabled = true;
-    elements.heatmapStatus.textContent = "Loading bundled incident records...";
+    elements.heatmapStatus.textContent = "Loading unverified demonstration incident records...";
 
     try {
         const data = state.heatData || (await fetchJson(HEATMAP_URL, {}, 10000));
         state.heatData = data;
         if (!data.points.length) {
-            elements.heatmapStatus.textContent = "No bundled incident records are available.";
+            elements.heatmapStatus.textContent = "No unverified demonstration incident records are available.";
             return;
         }
 
@@ -470,7 +482,7 @@ async function toggleHeatmap() {
         }).addTo(state.map);
         state.heatmapEnabled = true;
         elements.heatmapToggle.setAttribute("aria-pressed", "true");
-        elements.heatmapStatus.textContent = `${data.record_count} incident records, ${data.radius_meters} m influence radius`;
+        elements.heatmapStatus.textContent = `${data.record_count} unverified demonstration records, ${data.radius_meters} m influence radius`;
     } catch (error) {
         elements.heatmapStatus.textContent = error.message;
     } finally {

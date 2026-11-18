@@ -61,6 +61,76 @@ class RoutesApiTests(SimpleTestCase):
         self.assertEqual(data["routes"][0]["labels"], ["safest"])
         self.assertEqual(data["routes"][0]["geometry"][0], [28.475, 77.477])
 
+    def test_safe_path_is_null_when_no_safest_route_is_supported(self):
+        option = replace(route_option(), labels=("shortest",))
+        with patch("Model.views.calculate_route_options", return_value=[option]):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        data = response.json()
+        self.assertIsNone(data["safe_path"])
+        self.assertFalse(data["safest_route_available"])
+        self.assertEqual(data["original_route"], [[28.475, 77.477], [28.476, 77.477]])
+
+    def test_safe_path_uses_the_supported_safest_route(self):
+        with patch(
+            "Model.views.calculate_route_options", return_value=[route_option()]
+        ):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        data = response.json()
+        self.assertEqual(data["safe_path"], [[28.475, 77.477], [28.476, 77.477]])
+        self.assertTrue(data["safest_route_available"])
+
+    def test_incident_data_exposes_provenance_and_coverage_limits(self):
+        with patch(
+            "Model.views.calculate_route_options", return_value=[route_option()]
+        ):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        incident_data = response.json()["incident_data"]
+        self.assertEqual(
+            incident_data["verification_status"],
+            "unverified_demonstration_data",
+        )
+        self.assertFalse(incident_data["verified"])
+        self.assertEqual(incident_data["license"], None)
+        self.assertEqual(incident_data["redistribution_permission"], None)
+        self.assertEqual(
+            incident_data["coverage_semantics"]["basis"],
+            "record_proximity",
+        )
+        self.assertEqual(
+            incident_data["coverage_semantics"]["radius_meters"],
+            200,
+        )
+
     def test_rejects_missing_or_invalid_coordinates(self):
         for params in [
             {},

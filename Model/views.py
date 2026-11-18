@@ -16,6 +16,7 @@ from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
+from .utils.crime_loader import INCIDENT_DATA_METADATA
 from .utils.osm_graph import RoadDataUnavailable
 from .utils.risk_scoring import INCIDENT_RADIUS_METERS, RiskScorer
 from .utils.route_service import RouteNotFound, calculate_route_options
@@ -23,6 +24,13 @@ from .utils.routing import SearchLimitExceeded
 
 GEOCODER_REQUEST_INTERVAL_SECONDS = 1.0
 MAX_GEOCODER_RESPONSE_BYTES = 64 * 1024
+INCIDENT_COVERAGE_SEMANTICS = {
+    "basis": "record_proximity",
+    "radius_meters": INCIDENT_RADIUS_METERS,
+    "measurement": "union_of_record_influence_zones",
+    "route_eligibility": "every_edge_fully_covered",
+    "unknown_when": "coverage_is_partial_or_missing",
+}
 _GEOCODER_CACHE_ERRORS = (
     OSError,
     EOFError,
@@ -77,6 +85,11 @@ def safety_heatmap(request):
             "radius_meters": INCIDENT_RADIUS_METERS,
             "record_count": len(points),
             "source": "bundled_csv",
+            "metadata": {
+                "source": "bundled_csv",
+                **INCIDENT_DATA_METADATA,
+            },
+            "coverage_semantics": INCIDENT_COVERAGE_SEMANTICS,
         }
     )
 
@@ -200,7 +213,7 @@ def routes(request):
 
     serialized_routes = [_serialize_route(option) for option in options]
     shortest = _route_with_label(options, "shortest") or options[0]
-    safest = _route_with_label(options, "safest") or shortest
+    safest = _route_with_label(options, "safest")
 
     return Response(
         {
@@ -208,9 +221,18 @@ def routes(request):
             "destination": {"lat": end_lat, "lon": end_lon},
             "routes": serialized_routes,
             "route_count": len(serialized_routes),
-            "incident_data": {"source": "bundled_csv"},
+            "incident_data": {
+                "source": "bundled_csv",
+                **INCIDENT_DATA_METADATA,
+                "coverage_semantics": INCIDENT_COVERAGE_SEMANTICS,
+            },
             "original_route": [list(point) for point in shortest.geometry],
-            "safe_path": [list(point) for point in safest.geometry],
+            "safe_path": (
+                [list(point) for point in safest.geometry]
+                if safest is not None
+                else None
+            ),
+            "safest_route_available": safest is not None,
             "distance_meters": shortest.distance_meters,
             "avg_risk": shortest.risk_score,
             "nodes": len(shortest.node_ids),

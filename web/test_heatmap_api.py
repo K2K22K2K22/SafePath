@@ -18,6 +18,23 @@ class HeatmapApiTests(SimpleTestCase):
             self.assertTrue(-180 <= point["lon"] <= 180)
             self.assertTrue(0 < point["intensity"] <= 1)
 
+    def test_exposes_unverified_provenance_and_coverage_limits(self):
+        response = self.client.get("/api/safety-heatmap/", HTTP_HOST="localhost")
+
+        payload = response.json()
+        self.assertEqual(
+            payload["metadata"]["verification_status"],
+            "unverified_demonstration_data",
+        )
+        self.assertFalse(payload["metadata"]["verified"])
+        self.assertEqual(payload["metadata"]["license"], None)
+        self.assertEqual(payload["metadata"]["redistribution_permission"], None)
+        self.assertEqual(
+            payload["coverage_semantics"]["basis"],
+            "record_proximity",
+        )
+        self.assertEqual(payload["coverage_semantics"]["radius_meters"], 200)
+
     def test_serializes_only_valid_incident_records(self):
         scorer = type(
             "Scorer",

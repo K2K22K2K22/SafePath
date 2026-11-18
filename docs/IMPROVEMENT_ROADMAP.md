@@ -171,7 +171,7 @@ For each road edge and incident:
 
 Route risk will be the length-weighted mean edge risk. The API safety score will be the inverse risk score on a 0 to 100 scale, presented in the interface as a record score. Risk level thresholds and the exact formula will be documented with the implementation.
 
-A route that is not fully covered by the incident dataset will report unknown safety. The interface will present that route as unrated instead of claiming that it is proven safe.
+A route that is not fully covered by the incident dataset reports unknown safety. The interface presents that route as unrated instead of claiming that it is proven safe. Coverage is measured conservatively by unioning the portions of every edge within 200 metres of accepted records. A route is fully covered only when every edge is fully covered. The bundled records are unverified demonstration data, and unknown provenance, license, and redistribution metadata remain explicit.
 
 ### 4.4 Dijkstra and modified A* objectives
 

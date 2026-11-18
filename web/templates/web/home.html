@@ -15,7 +15,13 @@
                 <p class="eyebrow">Route planner</p>
                 <h1 class="mt-1 text-2xl font-extrabold tracking-tight text-ink">Compare routes by risk context</h1>
                 <p class="mt-2 text-sm leading-6 text-ink-muted">Compare real road paths by distance, estimated travel time, and incident-record proximity risk.</p>
-                <p class="mt-1 text-xs leading-5 text-ink-muted">Based on proximity to bundled records; not a personal-safety assessment.</p>
+                <div class="mt-3 rounded-lg border border-warning bg-warning-soft p-3" role="note">
+                    <p class="text-xs leading-5 text-ink">
+                        <strong>Unverified demonstration incident records.</strong>
+                        Provenance and collection methodology are unknown. Not verified crime data, not a personal-safety assessment, and not evidence of individual safety. Academic demonstration only; not an emergency or verified safety service.
+                    </p>
+                    <p class="mt-1 text-[0.68rem] leading-4 text-ink-muted">A route receives a modeled score only when every edge is covered by a 200 metre record-proximity zone.</p>
+                </div>
 
                 <form id="route-form" class="mt-5 grid gap-3" novalidate>
                     <div>

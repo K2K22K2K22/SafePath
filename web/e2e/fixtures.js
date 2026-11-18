@@ -23,7 +23,7 @@ const routePayload = {
       risk_data_available: true,
       incident_coverage_ratio: 1,
       explanation:
-        "Lowest incident-record proximity risk among fully covered generated routes.",
+        "Lowest modeled risk among the generated, eligible routes.",
     },
     {
       id: "route-2",

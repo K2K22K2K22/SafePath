@@ -58,15 +58,23 @@ Commit `c1638f5` added `DATABASE_URL` support through `dj-database-url`, Postgre
 
 Production settings now require a strong secret and exact host names, redirect HTTP to HTTPS, mark session and CSRF cookies secure, validate trusted CSRF origins, and keep HSTS disabled by default. Forwarded-protocol trust is disabled unless explicitly enabled behind a controlled proxy, and Compose binds the application to loopback. Health and static-asset probes use an explicit host header so they work without weakening the production host allowlist. The production check gate permits only the documented, deferred HSTS warnings and fails on every other deployment warning or error. The final local matrix passed 92 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Podman rebuilt the image and verified static collection, migrations, non-root Gunicorn, trusted and untrusted forwarded-protocol behavior, the health probe, volume ownership repair, and every manifest, CSS reference, and gzip response. Native Docker and remote CI remain required for final runtime evidence.
 
-## Phase 5 road data provider
+## Phase 5 external service compliance
+
+### Road data provider
 
 The road loader now sends fixed, bounded Overpass QL for drivable road classes to an explicitly configured HTTPS host instead of calling the OpenStreetMap editing or Map API. Public Overpass remains a low-volume development fallback only. Production route requests require an exact host in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`, and the production check script enforces the same rule. Known public providers remain rejected even when listed. Canonical host comparison, UTF-8-only XML, explicit oversized-error splitting, and the existing area, request, byte, deadline, split, XML, and graph limits remain active. Provider requests are serialized within one process. `docs/DATA_PROVIDERS.md` records configuration, limits, caching, licensing, attribution, failure behavior, and the multi-instance constraint. The Phase 5 local matrix passed 111 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. A fresh Podman image build and runtime verified the provider configuration, migrations, health probe, and graceful stop. Live requests to two public Overpass instances timed out from this environment, so public provider response availability remains unverified.
 
-## Phase 6 geocoding and map tiles
+### Geocoding and map tiles
 
 The geocoder now uses an identifying User-Agent, visible Nominatim and OpenStreetMap attribution, browser autocomplete suppression, normalized queries, successful-result caching, and a shared file lock that limits uncached provider request starts to one per second across Gunicorn workers sharing one instance filesystem. Provider responses are capped at 64 KiB. Malformed, oversized, and invalid-only payloads are rejected and not cached. The cache directory must be an application-owned real directory with mode `0700`; public and symlinked directories fail startup because the file cache deserializes local files. Cache failures do not block valid searches, while request-lock failures and invalid lock state return HTTP 503 because pacing cannot be guaranteed. The default DRF cache remains process-local for throttling; geocoder results use a separate bounded file cache.
 
-The browser uses the canonical OpenStreetMap standard raster endpoint for the light theme and CARTO's current raster basemap endpoint for the dark theme when a customer-owned, domain-restricted CARTO publishable key is configured. Production rejects obvious placeholder keys. Local development without a key uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. The key remains visible in browser requests and is never proxied through the application. The Phase 6 local matrix passed 137 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Compose configuration and a fresh Podman image runtime also passed. Public Nominatim has no availability guarantee, and separate application instances do not share the local pacing lock.
+The browser uses the canonical OpenStreetMap standard raster endpoint for the light theme and CARTO's current raster basemap endpoint for the dark theme when a customer-owned, domain-restricted CARTO publishable key is configured. Production rejects obvious placeholder keys. Local development without a key uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. The key remains visible in browser requests and is never proxied through the application. The geocoding local matrix passed 137 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Compose configuration and a fresh Podman image runtime also passed. Public Nominatim has no availability guarantee, and separate application instances do not share the local pacing lock.
+
+## Phase 6 incident provenance and coverage
+
+Repository history describes `data/delhi_crime_data.csv` as fictitious data for testing and demonstration. `data/source_metadata.json` now records that evidence and leaves the original source, collection methodology, collection date, geographical coverage, license, and redistribution permission explicitly unknown. The API, interface, and documentation label the records as unverified demonstration data.
+
+Coverage no longer uses an incident-coordinate bounding rectangle. The scorer unions each edge's intersections with 200 metre record-proximity zones, stores actual covered length, and requires every route edge to be fully covered before reporting a safety estimate or assigning `safest`. Partial and uncovered routes remain unrated, and the API returns `safe_path=null` when no supported safest route exists. The Phase 6 local matrix passed 151 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. A fresh Podman image build passed.
 
 ## Baseline deployment posture at commit `9085090`
 
@@ -173,8 +181,8 @@ Deployment readiness will require all of the following:
 
 - Public or hosted providers can throttle, reject, or become unavailable even when application safeguards work as designed.
 - The production CARTO key must be customer-owned and domain-restricted before deployment.
-- The incident dataset cannot currently be treated as verified crime data.
-- Bounding-box-derived coverage cannot establish complete road coverage.
+- The incident dataset remains unverified demonstration data. Its source, methodology, date, license, and redistribution permission are unknown.
+- Record-proximity coverage measures applicability of the bundled demonstration records, not real-world incident completeness or personal safety.
 - Turn restrictions remain unsupported unless a selected provider and a correct route-search implementation make them feasible.
 - The file-based geocoder limiter and cache coordinate workers only within one application instance. Multiple instances need external coordination or a self-hosted provider when using public Nominatim.
 - A free hosted database may expire. An external PostgreSQL provider with an explicit retention policy is required for a durable demo.

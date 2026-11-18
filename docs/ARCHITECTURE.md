@@ -51,7 +51,7 @@ The browser receives route geometry and metrics through relative API requests. I
 | Graph builder | `Model/utils/osm_graph.py` | Bounded Overpass acquisition, XML limits, access rules, one-way handling, barriers, caching |
 | Graph model | `Model/utils/road_graph.py` | Nodes, directed edges, endpoint-segment geometry, distance validation, adjacency indexes |
 | Risk scorer | `Model/utils/risk_scoring.py` | Incident validation, spatial index, proximity exposure, risk conversion, coverage |
-| Incident loader | `Model/utils/crime_loader.py` | Read and normalize bundled CSV columns |
+| Incident loader | `Model/utils/crime_loader.py` | Read and normalize bundled CSV columns and provenance metadata |
 
 ## 4. Route calculation flow
 
@@ -163,8 +163,8 @@ flowchart LR
     Search --> Distance[Distance to stored edge segment]
     Distance --> Exposure[Linear proximity exposure]
     Exposure --> Risk["1 - exp(-exposure)"]
-    Graph --> Coverage[Dataset coverage check]
-    Coverage --> Result[Edge risk and coverage sets]
+    Graph --> Coverage[Union record-proximity coverage]
+    Coverage --> Result[Edge risk and covered lengths]
     Risk --> Result
 ```
 
@@ -203,9 +203,9 @@ The API keeps `risk_score` and `safety_score` names for compatibility. The inter
 
 ### 5.4 Coverage semantics
 
-Dataset coverage is independent of incident magnitude. An edge is covered when its stored segment intersects the bounding area of accepted incidents. A route is fully covered when all of its edge distance is covered.
+Dataset coverage is independent of incident magnitude. For each edge, the scorer intersects its stored segment with the 200 metre influence zone of every accepted nearby record, unions those portions, and records the actual covered length in metres. A route is fully covered only when every edge length is covered. The aggregate `incident_coverage_ratio` is actual covered length divided by route length and cannot hide a gap in one edge.
 
-Fully covered routes can compete for the `safest` label. Partially covered or uncovered routes receive `risk_data_available=false`, `risk_score=null`, `safety_score=null`, and `risk_level="unknown"`. This prevents missing data from being presented as low risk.
+Fully covered routes can compete for the `safest` label. Partially covered or uncovered routes receive `risk_data_available=false`, `risk_score=null`, `safety_score=null`, and `risk_level="unknown"`. This prevents missing data from being presented as low risk. If no generated route is eligible, the API returns `safe_path=null` and `safest_route_available=false`.
 
 ## 6. Route labeling
 
@@ -214,7 +214,7 @@ Labels are assigned from actual generated candidates:
 | Label | Rule |
 | --- | --- |
 | `shortest` | The Dijkstra path with minimum road-edge distance |
-| `safest` | Lowest computed incident-record proximity risk among fully covered generated candidates; rendered as `Safest by proximity` |
+| `safest` | Lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; rendered as `Safest by proximity` |
 | `balanced` | The modified A* path with `beta=2.0` |
 | `alternative` | A retained candidate without a more specific role |
 
@@ -267,7 +267,7 @@ Key route fields include:
 - `diversity.shared_interior_edge_ratio`
 - `explanation`
 
-The top-level response includes `origin`, `destination`, `routes`, `route_count`, `incident_data`, `original_route`, `safe_path`, `distance_meters`, `avg_risk`, `nodes`, and `segments`. The final four fields are compatibility summary fields for the shortest route.
+The top-level response includes `origin`, `destination`, `routes`, `route_count`, `incident_data`, `original_route`, `safe_path`, `safest_route_available`, `distance_meters`, `avg_risk`, `nodes`, and `segments`. `safe_path` contains geometry only for a supported safest route and is otherwise `null`. The final four fields are compatibility summary fields for the shortest route.
 
 ## 8. Frontend state
 
@@ -297,7 +297,7 @@ The browser stores only presentation and request state:
 - Current theme and tile layer
 - Map point selection mode
 
-Route rendering uses a dedicated Leaflet pane. Route colors are assigned by route order and reused by cards, map lines, and the legend. Theme changes replace the tile layer without rebuilding route or heatmap layers. The interface presents computed values as record score and proximity risk and includes a visible disclaimer that they are not a personal-safety assessment.
+Route rendering uses a dedicated Leaflet pane. Route colors are assigned by route order and reused by cards, map lines, and the legend. Theme changes replace the tile layer without rebuilding route or heatmap layers. The interface presents computed values as record score and proximity risk, displays actual record-proximity coverage, and states that the bundled records are unverified demonstration data rather than verified crime data or a personal-safety assessment.
 
 ## 9. Trust boundaries and safeguards
 
@@ -307,7 +307,7 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 | Proxy to Django | Gunicorn forwarded-scheme handling disabled; explicit Django opt-in for `X-Forwarded-Proto`, only behind a proxy that replaces client-supplied headers |
 | Django to OSM | HTTPS host allowlist, explicit production provider approval, no redirects, stream byte limit, request limit, depth limit, UTF-8 and DTD or entity rejection |
 | Django to Nominatim | HTTPS host allowlist, identifying User-Agent, no redirects, connect and read timeouts, 64 KiB response limit, response coordinate validation, shared one-second request pacing |
-| Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks |
+| Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks, explicit unverified provenance metadata |
 | Routing search | Finite edge values, non-negative beta, endpoint validation, bounded node exploration |
 | Browser map | Leaflet and Leaflet.heat pinned and vendored with licenses |
 | Container | `/health/` endpoint and Docker health check |

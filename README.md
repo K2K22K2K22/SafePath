@@ -149,9 +149,10 @@ A successful response contains:
 - `routes`: up to four route objects with geometry, labels, algorithm, distance, duration, proximity risk, record score, coverage, search metrics, and diversity metrics
 - `route_count`: number of routes actually generated
 - `origin` and `destination`: validated request coordinates
-- `incident_data`: the bundled incident source
+- `incident_data`: bundled-source provenance, unknown metadata, and coverage semantics
 - `original_route`: geometry of the shortest route
-- `safe_path`: geometry of the safest route, or the shortest route when no supported `safest` label exists
+- `safe_path`: geometry of the supported safest route, or `null` when no route qualifies
+- `safest_route_available`: whether a supported `safest` route exists
 - `distance_meters`, `avg_risk`, `nodes`, and `segments`: compatibility summary fields for the shortest route
 
 Each route also includes `type` and `duration_source`.
@@ -159,11 +160,11 @@ Each route also includes `type` and `duration_source`.
 Route labels are emitted only for supported model roles:
 
 - `shortest`: minimum road-edge distance in the loaded graph
-- `safest`: lowest computed incident-record proximity risk among fully covered generated candidates; the interface renders this as `Safest by proximity`
+- `safest`: lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; the interface renders this as `Safest by proximity`
 - `balanced`: modified A* result with `beta=2.0`
 - `alternative`: distinct candidate generated with temporary edge penalties
 
-A single route can carry multiple labels when it wins more than one objective. The application does not fabricate a missing `safest` label when incident coverage is insufficient. Exceeding the configured search exploration limit returns HTTP 503.
+A single route can carry multiple labels when it wins more than one objective. The application does not fabricate a missing `safest` label when incident coverage is insufficient, and `safe_path` remains `null` in that case. Exceeding the configured search exploration limit returns HTTP 503.
 
 `/api/safe-route/` remains an alias of `/api/routes/` for compatibility.
 
@@ -181,7 +182,7 @@ The proxy validates the query length, restricts the provider to configured HTTPS
 GET /api/safety-heatmap/
 ```
 
-The response contains validated incident points, their normalized intensity, the 200 metre influence radius, record count, and source. The map layer is off by default and is independent from route layers.
+The response contains validated incident points, their normalized intensity, the 200 metre influence radius, record count, source provenance, unknown source metadata, and coverage semantics. The map layer is off by default and is independent from route layers.
 
 ### Health
 
@@ -244,9 +245,9 @@ safety_score = round((1 - route_risk) * 100)
 
 The API retains `risk_score` and `safety_score` field names for compatibility. The interface presents them as proximity risk and record score. Risk levels are `low` below `0.2`, `moderate` below `0.5`, and `high` otherwise.
 
-Incident coverage is tracked separately from risk magnitude. Any route that is not fully covered receives unknown safety and no unsupported `safest` label. Partial coverage is never treated as zero risk.
+Incident coverage is tracked separately from risk magnitude. For each edge, the application unions the portions inside the 200 metre influence zones of accepted records and stores the actual covered length in metres. A route is fully covered only when every edge is fully covered. Any partial or uncovered route receives unknown safety and no `safest` label. Partial coverage is never treated as zero risk, and `safe_path` is `null` when no supported safest route exists.
 
-The bundled file currently contains 225 raw rows and 193 valid unique incident records.
+The bundled file contains 225 raw rows and 193 valid unique incident records. It is unverified demonstration data. Its original source, collection methodology, collection date, geographical coverage, license, and redistribution permission are unknown. See [`data/README.md`](data/README.md) and [`data/source_metadata.json`](data/source_metadata.json).
 
 ## Frontend behavior
 
@@ -255,7 +256,8 @@ The bundled file currently contains 225 raw rows and 193 valid unique incident r
 - Selecting a route card highlights that line and updates its map emphasis.
 - Route cards and comparison rows show only API values.
 - Loading, empty, error, and unknown-coverage states are explicit.
-- The heatmap uses bundled incident points and starts disabled.
+- The heatmap uses unverified demonstration incident points and starts disabled.
+- Route cards show actual record-proximity coverage and explain when a safety estimate is unavailable.
 - Theme changes persist in local storage and replace only the tile layer. Route selection and heatmap state remain intact.
 - Light tiles use the canonical OpenStreetMap raster endpoint. Dark tiles use CARTO raster tiles when a customer-owned publishable key is configured; local development without a key uses filtered OpenStreetMap tiles. OpenStreetMap, Nominatim, and CARTO attribution remain visible.
 - The layout is usable down to 320 CSS pixels without horizontal page overflow.
@@ -288,10 +290,10 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 137 Django tests passed
+- 151 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
-- Mypy passed for 35 source files
+- Mypy passed for 36 source files
 - ESLint and Node syntax checks passed
 - Tailwind build and Django system checks passed
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
@@ -343,12 +345,12 @@ docs/
 ## Limitations and deliberate omissions
 
 - Incident data is a static bundled dataset, not a live police or emergency feed.
-- The CSV's provenance and collection methodology are not documented. Its records must not be treated as verified real-world crime data.
+- The CSV is explicitly unverified demonstration data. Source, collection methodology, collection date, geographical coverage, license, and redistribution permission remain unknown.
 - Record scores and proximity risk describe distance to bundled records, not personal safety, crime likelihood, or an individual risk assessment. The interface states this beside the route planner.
 - Travel time is an estimate from road class and available speed data, not live traffic.
 - OSM road snapshots and Nominatim results depend on external service availability and freshness.
 - Map tiles remain network-dependent even though map libraries are vendored locally.
-- The bundled dataset has finite geographic coverage. Routes that are not fully covered by it are reported as unrated rather than safe.
+- Record-proximity coverage does not establish real-world incident completeness. Routes that are not fully covered are reported as unrated rather than safe.
 - OSM turn restrictions and relation-based restrictions are not applied, so routes may ignore valid turn bans and differ from production routers.
 - The included Docker configuration runs Gunicorn as a non-root user, but public deployment still requires an external production database and production provider configuration.
 - SAFE PATH has no custom authentication workflow, user accounts, personalization, live incident reporting, or incident moderation.

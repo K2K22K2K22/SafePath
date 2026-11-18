@@ -19,6 +19,7 @@ BALANCED_RISK_WEIGHT = 2.0
 SAFEST_RISK_WEIGHT = 8.0
 DIVERSITY_THRESHOLD = 0.75
 EDGE_PENALTY_MULTIPLIER = 2.0
+COVERAGE_LENGTH_TOLERANCE_METERS = 1e-6
 _RISK_CACHE: weakref.WeakKeyDictionary[RoadGraph, EdgeRiskScores] = (
     weakref.WeakKeyDictionary()
 )
@@ -350,18 +351,22 @@ def _route_coverage(path, graph, risks):
     if not path.edge_ids:
         return 0.0, False
     if not isinstance(risks, EdgeRiskScores):
-        return 1.0, True
+        return 0.0, False
 
     total_distance = sum(
         graph.edges[edge_id].distance_meters for edge_id in path.edge_ids
     )
+    covered_lengths = risks.proximity_covered_lengths_meters
     covered_distance = sum(
-        graph.edges[edge_id].distance_meters
-        for edge_id in path.edge_ids
-        if edge_id in risks.covered_edge_ids
+        covered_lengths.get(edge_id, 0.0) for edge_id in path.edge_ids
     )
     ratio = covered_distance / total_distance if total_distance > 0 else 0.0
-    return ratio, ratio >= 0.999999
+    fully_covered = total_distance > 0 and all(
+        covered_lengths.get(edge_id, 0.0)
+        >= graph.edges[edge_id].distance_meters - COVERAGE_LENGTH_TOLERANCE_METERS
+        for edge_id in path.edge_ids
+    )
+    return ratio, fully_covered
 
 
 def _route_risk(path, graph, risks):
@@ -424,9 +429,7 @@ def _risk_level(risk_score):
 
 def _route_explanation(labels):
     explanations = {
-        "safest": (
-            "Lowest incident-record proximity risk among fully covered generated routes."
-        ),
+        "safest": "Lowest modeled risk among the generated, eligible routes.",
         "shortest": "Minimum road-edge distance in the loaded graph.",
         "balanced": "Balanced distance and risk objective.",
         "alternative": "Distinct path generated with temporary edge penalties.",

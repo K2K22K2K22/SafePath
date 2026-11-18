@@ -30,6 +30,10 @@ class ApplicationSmokeTests(SimpleTestCase):
         self.assertIn("comparison-row-template", content)
         self.assertIn("Incident heatmap", content)
         self.assertIn("not a personal-safety assessment", content)
+        self.assertIn("Unverified demonstration incident records", content)
+        self.assertIn("Not verified crime data", content)
+        self.assertIn("every edge is covered", content)
+        self.assertIn("not an emergency or verified safety service", content)
         self.assertNotIn("Throught ABC Block", content)
         self.assertNotIn("Walk: 24 min", content)
 
