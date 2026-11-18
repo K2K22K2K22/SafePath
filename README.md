@@ -310,9 +310,9 @@ docs/
 | 5 | Bundled-data independent safety heatmap | `8336f8d` |
 | 6 | Persisted application theme and synchronized map tiles | `429b86a`, `dd1895c` |
 | 7 | Responsive navigation refinement through 320 px | `ca7b361` |
-| 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07`, `5ec7aef` |
+| 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07`, `5ec7aef`, `965ffc3` |
 | 9 | Initial setup, API, algorithm, architecture, testing, and limitation documentation | `484ddba` |
-| 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8`, `4977d13` |
+| 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8`, `4977d13`, `ab83c59`, `2780c70` |
 
 ## Limitations and deliberate omissions
 
