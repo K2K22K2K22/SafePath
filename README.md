@@ -312,7 +312,7 @@ docs/
 | 7 | Responsive navigation refinement through 320 px | `ca7b361` |
 | 8 | Browser tests, static analysis, local assets, health check, CI, and container hardening | `e7fe8d6`, `56b8b07`, `5ec7aef` |
 | 9 | Initial setup, API, algorithm, architecture, testing, and limitation documentation | `484ddba` |
-| 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8` |
+| 10 | Pairwise route diversity, search-limit API, container runtime, and final documentation corrections | `55259aa`, `ced06b8`, `4977d13` |
 
 ## Limitations and deliberate omissions
 
