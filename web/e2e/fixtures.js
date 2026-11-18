@@ -66,7 +66,11 @@ const transparentPng = Buffer.from(
 
 async function mockApplication(
   page,
-  { routeStatus = 200, heatmapPoints = heatmapPayload.points } = {},
+  {
+    routeStatus = 200,
+    heatmapPoints = heatmapPayload.points,
+    routes = routePayload.routes,
+  } = {},
 ) {
   await page.route("**/api/geocode/**", async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q");
@@ -86,7 +90,7 @@ async function mockApplication(
       contentType: "application/json",
       body: JSON.stringify(
         routeStatus === 200
-          ? routePayload
+          ? { ...routePayload, routes }
           : { detail: "Road data unavailable." },
       ),
     });

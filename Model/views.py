@@ -16,7 +16,7 @@ from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
-from .utils.crime_loader import INCIDENT_DATA_METADATA
+from .utils.crime_loader import PUBLIC_INCIDENT_DATA_METADATA
 from .utils.osm_graph import RoadDataUnavailable
 from .utils.risk_scoring import INCIDENT_RADIUS_METERS, RiskScorer
 from .utils.route_service import RouteNotFound, calculate_route_options
@@ -86,8 +86,8 @@ def safety_heatmap(request):
             "record_count": len(points),
             "source": "bundled_csv",
             "metadata": {
+                **PUBLIC_INCIDENT_DATA_METADATA,
                 "source": "bundled_csv",
-                **INCIDENT_DATA_METADATA,
             },
             "coverage_semantics": INCIDENT_COVERAGE_SEMANTICS,
         }
@@ -222,8 +222,8 @@ def routes(request):
             "routes": serialized_routes,
             "route_count": len(serialized_routes),
             "incident_data": {
+                **PUBLIC_INCIDENT_DATA_METADATA,
                 "source": "bundled_csv",
-                **INCIDENT_DATA_METADATA,
                 "coverage_semantics": INCIDENT_COVERAGE_SEMANTICS,
             },
             "original_route": [list(point) for point in shortest.geometry],
@@ -413,7 +413,8 @@ def _serialize_route(option):
         "safety_score": option.safety_score,
         "risk_level": option.risk_level,
         "risk_data_available": option.risk_data_available,
-        "incident_coverage_ratio": round(option.incident_coverage_ratio, 4),
+        "incident_coverage_ratio": math.floor(option.incident_coverage_ratio * 10000)
+        / 10000,
         "nodes_explored": option.nodes_explored,
         "computation_time_ms": round(option.computation_time_ms, 3),
         "path_cost": round(option.path_cost, 3),

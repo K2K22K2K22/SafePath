@@ -130,6 +130,31 @@ class RoutesApiTests(SimpleTestCase):
             incident_data["coverage_semantics"]["radius_meters"],
             200,
         )
+        self.assertNotIn("repository_evidence", incident_data)
+
+    def test_incomplete_coverage_ratio_is_not_serialized_as_complete(self):
+        option = replace(
+            route_option(),
+            labels=("shortest",),
+            risk_score=None,
+            safety_score=None,
+            risk_level="unknown",
+            risk_data_available=False,
+            incident_coverage_ratio=0.99999,
+        )
+        with patch("Model.views.calculate_route_options", return_value=[option]):
+            response = self.client.get(
+                "/api/routes/",
+                {
+                    "start_lat": "28.475",
+                    "start_lon": "77.477",
+                    "end_lat": "28.476",
+                    "end_lon": "77.477",
+                },
+                HTTP_HOST="localhost",
+            )
+
+        self.assertLess(response.json()["routes"][0]["incident_coverage_ratio"], 1.0)
 
     def test_rejects_missing_or_invalid_coordinates(self):
         for params in [

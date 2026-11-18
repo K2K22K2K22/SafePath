@@ -34,6 +34,7 @@ class HeatmapApiTests(SimpleTestCase):
             "record_proximity",
         )
         self.assertEqual(payload["coverage_semantics"]["radius_meters"], 200)
+        self.assertNotIn("repository_evidence", payload["metadata"])
 
     def test_serializes_only_valid_incident_records(self):
         scorer = type(

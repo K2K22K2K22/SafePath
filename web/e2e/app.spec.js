@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-const { mockApplication, submitRoute } = require("./fixtures");
+const { mockApplication, routePayload, submitRoute } = require("./fixtures");
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.clear());
@@ -19,6 +19,9 @@ test("renders every route and changes the selected route", async ({ page }) => {
   await submitRoute(page);
 
   await expect(page.locator(".leaflet-route-pane path")).toHaveCount(2);
+  await expect(page.locator("[data-route-card]").first()).toContainText(
+    "Lowest modeled risk",
+  );
   await expect(page.locator("[data-route-card][data-selected='true']")).toHaveAttribute(
     "data-route-id",
     "route-1",
@@ -95,6 +98,33 @@ test("switches map tiles without losing route selection", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("safepath-theme")))
     .toBe("dark");
+});
+
+test("never labels incomplete coverage as 100 percent", async ({ page }) => {
+  const routes = routePayload.routes.map((route, index) =>
+    index === 0
+      ? {
+          ...route,
+          type: "shortest",
+          labels: ["shortest"],
+          risk_score: null,
+          safety_score: null,
+          risk_level: "unknown",
+          risk_data_available: false,
+          incident_coverage_ratio: 1,
+        }
+      : route,
+  );
+  await mockApplication(page, { routes });
+  await page.goto("/");
+  await submitRoute(page);
+
+  await expect(page.locator("[data-route-coverage]").first()).toContainText(
+    "Record-proximity coverage: 99%",
+  );
+  await expect(page.locator("[data-route-coverage]").first()).toContainText(
+    "Safety estimate unavailable",
+  );
 });
 
 test("shows a recoverable route API error state", async ({ page }) => {

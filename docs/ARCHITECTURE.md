@@ -214,7 +214,7 @@ Labels are assigned from actual generated candidates:
 | Label | Rule |
 | --- | --- |
 | `shortest` | The Dijkstra path with minimum road-edge distance |
-| `safest` | Lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; rendered as `Safest by proximity` |
+| `safest` | Lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; rendered as `Lowest modeled risk` |
 | `balanced` | The modified A* path with `beta=2.0` |
 | `alternative` | A retained candidate without a more specific role |
 

@@ -1,8 +1,15 @@
 import json
+import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import SimpleTestCase
+
+from Model.utils.crime_loader import (
+    PUBLIC_INCIDENT_DATA_METADATA,
+    load_source_metadata,
+)
 
 
 class IncidentMetadataTests(SimpleTestCase):
@@ -28,3 +35,60 @@ class IncidentMetadataTests(SimpleTestCase):
                 for evidence in metadata["repository_evidence"]
             )
         )
+
+    def test_public_metadata_does_not_expose_repository_evidence(self):
+        self.assertNotIn("repository_evidence", PUBLIC_INCIDENT_DATA_METADATA)
+        self.assertFalse(PUBLIC_INCIDENT_DATA_METADATA["verified"])
+
+    def test_missing_or_malformed_metadata_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            metadata_path = Path(temporary_directory) / "source_metadata.json"
+
+            with patch(
+                "Model.utils.crime_loader.SOURCE_METADATA_FILE",
+                metadata_path,
+            ):
+                missing = load_source_metadata()
+
+                metadata_path.write_text("not-json", encoding="utf-8")
+                malformed = load_source_metadata()
+
+                metadata_path.write_text("[]", encoding="utf-8")
+                wrong_shape = load_source_metadata()
+
+        for metadata in (missing, malformed, wrong_shape):
+            self.assertFalse(metadata["verified"])
+            self.assertEqual(
+                metadata["verification_status"],
+                "unverified_demonstration_data",
+            )
+            self.assertIsNone(metadata["original_source"])
+            self.assertIsNone(metadata["license"])
+
+    def test_metadata_cannot_self_declare_verified_data(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            metadata_path = Path(temporary_directory) / "source_metadata.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "dataset_file": "delhi_crime_data.csv",
+                        "verification_status": "verified",
+                        "verified": True,
+                        "original_source": "unsupported claim",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "Model.utils.crime_loader.SOURCE_METADATA_FILE",
+                metadata_path,
+            ):
+                metadata = load_source_metadata()
+
+        self.assertFalse(metadata["verified"])
+        self.assertEqual(
+            metadata["verification_status"],
+            "unverified_demonstration_data",
+        )
+        self.assertIsNone(metadata["original_source"])

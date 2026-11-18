@@ -160,7 +160,7 @@ Each route also includes `type` and `duration_source`.
 Route labels are emitted only for supported model roles:
 
 - `shortest`: minimum road-edge distance in the loaded graph
-- `safest`: lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; the interface renders this as `Safest by proximity`
+- `safest`: lowest modeled risk among the generated, eligible routes with every edge fully covered by a record-proximity zone; the interface renders this as `Lowest modeled risk`
 - `balanced`: modified A* result with `beta=2.0`
 - `alternative`: distinct candidate generated with temporary edge penalties
 
@@ -290,8 +290,8 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 151 Django tests passed
-- 12 Playwright tests passed across desktop and mobile Chromium
+- 155 Django tests passed
+- 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed for 36 source files
 - ESLint and Node syntax checks passed

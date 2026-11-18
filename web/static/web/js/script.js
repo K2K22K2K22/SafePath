@@ -215,7 +215,7 @@ function formatDuration(durationSeconds) {
 
 function formatLabel(label) {
     if (label === "safest") {
-        return "Safest by proximity";
+        return "Lowest modeled risk";
     }
     return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -255,10 +255,14 @@ function coverageLabel(route) {
     if (!Number.isFinite(route.incident_coverage_ratio)) {
         return "Record-proximity coverage unavailable.";
     }
-    const percentage = Math.round(route.incident_coverage_ratio * 100);
     if (route.risk_data_available) {
+        const percentage = Math.round(route.incident_coverage_ratio * 100);
         return `Record-proximity coverage: ${percentage}% (all route edges covered).`;
     }
+    const percentage = Math.min(
+        99,
+        Math.floor(route.incident_coverage_ratio * 100),
+    );
     return `Record-proximity coverage: ${percentage}%. Safety estimate unavailable because route coverage is incomplete.`;
 }
 
