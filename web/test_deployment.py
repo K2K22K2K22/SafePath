@@ -200,6 +200,14 @@ class ContainerEntrypointTests(SimpleTestCase):
                 "GUNICORN_GRACEFUL_TIMEOUT": "invalid",
                 "DOCKER_STOP_GRACE_PERIOD": "40s",
             },
+            {
+                "GUNICORN_GRACEFUL_TIMEOUT": "30",
+                "DOCKER_STOP_GRACE_PERIOD": "abc",
+            },
+            {
+                "GUNICORN_GRACEFUL_TIMEOUT": "30",
+                "DOCKER_STOP_GRACE_PERIOD": "40",
+            },
         ):
             with self.subTest(environment=environment):
                 result = self.run_entrypoint(

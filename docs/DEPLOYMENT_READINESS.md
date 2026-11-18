@@ -42,6 +42,10 @@ A production settings check with a deliberately short test key reported five war
 
 The latest remote CI run for `9085090` passed Python, frontend, browser, and Compose configuration checks. It failed the new Compose startup assertion that checks for a host checkout database file. Earlier CI run `44215010163` passed for commit `80fbfaf`. The Compose startup failure must be resolved before deployment readiness can be claimed.
 
+## Phase 1 runtime lifecycle
+
+Commits `d4c06e6` and `ca7f9ee` replaced the development server with Gunicorn, added a non-root image, constrained migration mode, repaired legacy SQLite volume ownership, sent container logs to one stream, and enforced a Docker stop grace greater than the Gunicorn graceful timeout. Local Compose configuration, entrypoint, Gunicorn, and test checks pass. The Docker daemon was unavailable locally, so the first remote CI run of the strengthened container lifecycle remains the required runtime evidence.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files

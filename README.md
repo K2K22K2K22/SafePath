@@ -101,7 +101,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
 | `GUNICORN_TIMEOUT` | `60` | Gunicorn request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Gunicorn graceful shutdown timeout in seconds |
-| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace; must be greater than Gunicorn's graceful timeout |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix; must exceed Gunicorn's graceful timeout |
 | `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
 | `SAFEPATH_RUN_MIGRATIONS` | `false` in the image | Run migrations before Gunicorn when set to `true` |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |

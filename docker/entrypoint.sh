@@ -7,7 +7,7 @@ graceful_timeout="${GUNICORN_GRACEFUL_TIMEOUT:-30}"
 stop_grace_period="${DOCKER_STOP_GRACE_PERIOD:-40s}"
 case "$stop_grace_period" in
     *s) stop_grace_seconds="${stop_grace_period%s}" ;;
-    *) stop_grace_seconds="$stop_grace_period" ;;
+    *) stop_grace_seconds="" ;;
 esac
 case "$graceful_timeout" in
     ''|*[!0-9]*)
@@ -17,7 +17,7 @@ case "$graceful_timeout" in
 esac
 case "$stop_grace_seconds" in
     ''|*[!0-9]*)
-        echo "Docker stop grace must be an integer number of seconds." >&2
+        echo "Docker stop grace must be integer seconds with an s suffix." >&2
         exit 64
         ;;
 esac

@@ -10,9 +10,9 @@ SAFE PATH runs under Gunicorn in the production container. The configuration rea
 | `GUNICORN_WORKERS` | `2` | Number of worker processes |
 | `GUNICORN_TIMEOUT` | `60` | Worker request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Graceful shutdown timeout in seconds |
-| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace period; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
 
-Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when the platform sends a termination signal. The container redirects standard error to standard output before migrations and Gunicorn start, so all container process logs use one stream. Startup fails with exit code 64 unless both grace values are integer seconds and the Docker stop grace is greater than the Gunicorn graceful timeout. Docker must therefore allow more time than Gunicorn's graceful timeout or it can terminate workers before graceful shutdown finishes.
+Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when the platform sends a termination signal. The container redirects standard error to standard output before migrations and Gunicorn start, so all container process logs use one stream. Startup fails with exit code 64 unless the Gunicorn grace is integer seconds, the Docker stop grace uses the same integer-second format with an `s` suffix, and the Docker stop grace is greater than the Gunicorn graceful timeout. Docker must therefore allow more time than Gunicorn's graceful timeout or it can terminate workers before graceful shutdown finishes.
 
 The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build. The image build runs `collectstatic`, and WhiteNoise serves compressed, manifest-based assets from the production runtime.
 
@@ -105,7 +105,7 @@ docker run --rm --publish "${PORT:-8000}:${PORT:-8000}" \
   safepath
 ```
 
-Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation. A direct container using a volume created by an older root-owned image needs a one-time ownership repair before it can start as the non-root user:
+Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation. The image cannot encode a Docker stop timeout, so direct `docker run` commands must pass `--stop-timeout` with the same number of seconds as `DOCKER_STOP_GRACE_PERIOD`. A direct container using a volume created by an older root-owned image needs a one-time ownership repair before it can start as the non-root user:
 
 ```bash
 docker run --rm --user root \

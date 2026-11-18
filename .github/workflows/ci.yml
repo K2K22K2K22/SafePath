@@ -123,6 +123,7 @@ jobs:
           assert config["services"]["data-init"]["entrypoint"] == [
               "chown", "-R", "10001:10001", "/data"
           ]
+          assert config["services"]["data-init"]["command"] == []
           PY
 
       - name: Docker Compose startup
@@ -141,6 +142,10 @@ jobs:
             --volume safepath-ci_safepath_data:/data \
             "$image_id" touch /data/legacy-root-owned
           docker compose up --detach
+          init_id="$(docker compose ps -aq data-init)"
+          test "$(docker inspect --format '{{.Path}}' "$init_id")" = "chown"
+          test "$(docker inspect --format '{{json .Args}}' "$init_id")" = \
+            '["-R","10001:10001","/data"]'
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath_django)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath_django)"
@@ -186,6 +191,7 @@ jobs:
         run: |
           docker build --tag safepath-ci .
           docker run --detach --name safepath-ci \
+            --stop-timeout 40 \
             --env DJANGO_SECRET_KEY=ci-only-secret \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
             --env SAFEPATH_RUN_MIGRATIONS=true \
@@ -237,6 +243,7 @@ jobs:
           PY
 
           docker run --detach --name safepath-ci-no-migrations \
+            --stop-timeout 40 \
             --env DJANGO_SECRET_KEY=ci-only-secret \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
             --env SAFEPATH_RUN_MIGRATIONS=false \
