@@ -126,6 +126,14 @@ The first production Python audit found 88 known vulnerabilities across eight ou
 
 Provider behavior remains covered by deterministic mocked upstream tests. Ordinary CI does not call public OSM or Nominatim services. Native Docker, remote CI, and live Render behavior remain unverified because the repository was not pushed and no public resource was created.
 
+## Phase 11 operations documentation
+
+The deployment guide now covers local setup, production topology, Python 3.13, required deployment environment variables, PostgreSQL and migrations, static collection, Gunicorn, Docker, Render and Neon, superuser creation, health probes, logs, troubleshooting, provider policies, attribution, safety and routing limitations, and backup and recovery.
+
+`docs/EXTERNAL_SERVICES.md` records the operator service inventory, privacy boundary, credential classes, provider agreement requirements, attribution duties, failure behavior, and provider-change checklist. It also states that the bundled incident file remains unverified demonstration data with unknown licensing and redistribution permission.
+
+The documentation does not claim that a Render service, Neon database, CARTO account, paid road provider, or public deployment exists. Operator-managed backup and restore procedures use standard PostgreSQL and Python commands. The PostgreSQL dump, backup-list, and restore commands were exercised against a local PostgreSQL 16 container, and the SQLite backup command was exercised locally. No live production database was available for an end-to-end restore test.
+
 ## Baseline deployment posture at commit `9085090`
 
 ### Runtime and static files

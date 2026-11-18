@@ -96,6 +96,8 @@ Before applying the Blueprint, create an external PostgreSQL database such as Ne
 
 Render Free services use an ephemeral filesystem, support one instance, may spin down after 15 minutes of inactivity, and are not production-ready. Public Nominatim has no availability guarantee. Keep the demo at one instance unless geocoder pacing is moved to shared coordination. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#render-native-deployment) for Neon setup, exact Blueprint steps, validation, and troubleshooting.
 
+Production operations, environment variables, health checks, logging, superuser creation, backup and recovery, and safety limitations are covered in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Provider contracts, credential handling, attribution, failure behavior, and the provider-change checklist are covered in [docs/EXTERNAL_SERVICES.md](docs/EXTERNAL_SERVICES.md). Current verification evidence and unresolved deployment blockers are recorded in [docs/DEPLOYMENT_READINESS.md](docs/DEPLOYMENT_READINESS.md).
+
 ## Configuration
 
 All supported settings are documented in [.env.example](.env.example). Important controls include:
@@ -338,6 +340,9 @@ docs/
   IMPROVEMENT_ROADMAP.md      Original audit and phased plan
   ARCHITECTURE.md             Architecture and flow diagrams
   DATA_PROVIDERS.md           External provider policy and limits
+  EXTERNAL_SERVICES.md        Operator service, credential, and attribution checklist
+  DEPLOYMENT.md               Deployment, operations, backup, and recovery guide
+  DEPLOYMENT_READINESS.md     Verified checks, acceptance status, and blockers
 ```
 
 ## Delivery phases

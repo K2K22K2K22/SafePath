@@ -1,5 +1,63 @@
 # Deployment
 
+## Production architecture
+
+SAFE PATH supports Python 3.13 and is tested with CPython 3.13.18. Node.js 22 is used to build frontend assets, not to serve the application.
+
+A deployed topology has these trust boundaries:
+
+```text
+Browser -> TLS proxy or Render -> Gunicorn -> Django and DRF
+                                      |-> WhiteNoise static assets
+                                      |-> external PostgreSQL
+                                      |-> approved road-data provider
+                                      |-> approved geocoder
+Browser -> OpenStreetMap or CARTO raster tiles
+Django and Gunicorn -> bundled incident CSV
+```
+
+The application does not terminate TLS itself. The platform or proxy must terminate HTTPS and, when used, replace client-supplied forwarded headers. Gunicorn handles HTTP, WhiteNoise serves collected static files, and PostgreSQL stores framework state such as sessions and admin accounts. Route results, road graphs, and incident records are not persisted in the database. The incident CSV is bundled with the release.
+
+Render's native Blueprint is an academic single-instance deployment. It uses one Gunicorn worker, an external PostgreSQL database, and an ephemeral local geocoder cache. No deployment or external resource is created by this repository.
+
+## Local setup
+
+Run these commands from a checkout:
+
+```bash
+python3.13 -m venv venv
+. venv/bin/activate
+pip install --requirement requirements-dev.txt
+npm ci
+cp .env.example .env
+npm run build:css
+DJANGO_DEBUG=True python manage.py migrate
+DJANGO_DEBUG=True python manage.py runserver
+```
+
+Open <http://127.0.0.1:8000>. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. Local development does not require a CARTO key; without one, dark mode uses filtered OpenStreetMap tiles. SQLite is the local database fallback.
+
+## Environment variables
+
+[`.env.example`](../.env.example) is the complete supported environment inventory, and the README configuration table explains the main controls. A deployed environment must use these values:
+
+| Variable | Deployment value | Handling |
+| --- | --- | --- |
+| `DJANGO_DEBUG` | `False` | Required production mode |
+| `DJANGO_SECRET_KEY` | New random value with at least 50 varied characters | Secret manager; never commit |
+| `DJANGO_ALLOWED_HOSTS` | Exact deployed host names, without ports | Required production allowlist |
+| `CSRF_TRUSTED_ORIGINS` | Exact `https://` origins when cross-origin requests are needed | Exact HTTPS origins; no paths |
+| `DJANGO_TRUST_X_FORWARDED_PROTO` | `True` only behind a proxy that replaces forwarded headers | Render uses `True`; keep `False` for direct local containers |
+| `DATABASE_URL` | PostgreSQL URL with `sslmode=require`, `verify-ca`, or `verify-full` | Secret manager; use a direct URL for migrations |
+| `SAFEPATH_CARTO_API_KEY` | Customer-owned publishable key restricted to the deployed domain | Browser-visible value, not a server secret |
+| `SAFEPATH_OSM_API_URL` | HTTPS endpoint of the approved paid or self-hosted road provider | No URL credentials |
+| `SAFEPATH_OSM_API_ALLOWED_HOSTS` | Exact host from `SAFEPATH_OSM_API_URL` | Exact host allowlist |
+| `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Same approved provider host | Explicit production assertion |
+| `PORT` | Platform-assigned port | Gunicorn bind port |
+| `SAFEPATH_CACHE_DIR` | Private application-owned directory with mode `0700` | Local cache; disposable on Render |
+
+The production settings gate also validates the Django secret, hosts, any configured CSRF origins, forwarded-protocol choice, HTTPS cookies, PostgreSQL TLS settings, CARTO key, and road-provider approval. Run `python scripts/check_production.py` with the complete deployment environment before release.
+
 ## Application runtime
 
 SAFE PATH runs under Gunicorn in the production container. The configuration reads:
@@ -109,6 +167,61 @@ Production mode rejects a PostgreSQL URL without `sslmode=require`, `verify-ca`,
 
 PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Connection establishment is limited to five seconds and statements to ten seconds, keeping readiness checks and failed connections below the Gunicorn worker timeout. Run migrations against the same database before starting the release.
 
+### Admin and superuser
+
+Django's framework admin remains enabled at `/admin/`. It is an operator tool, not a SAFE PATH user-account system, and it has no SAFE PATH-specific access controls. If it is not needed, block the path at the hosting proxy or remove it in a separately reviewed deployment change.
+
+Create a superuser with the complete production environment and a direct PostgreSQL URL:
+
+```bash
+python manage.py createsuperuser
+```
+
+The command uses the active `DATABASE_URL` and writes only the standard Django auth rows. Render Free has no shell, so run it from a trusted operator checkout connected to the same database. Keep the password out of command history and deployment logs. After creation, test the login at `https://YOUR-HOSTNAME/admin/` and remove any temporary database access that is no longer required.
+
+### Backup and recovery
+
+The database contains framework sessions, admin accounts, and Django administrative history. It does not contain routes, graphs, cached responses, or incident records. Incident data and application source come from the reviewed Git release; static files are rebuilt with `collectstatic`; local graph and geocoder caches are disposable.
+
+Use the database provider's scheduled snapshots or point-in-time recovery as the primary backup. Test a restore before relying on it. A PostgreSQL logical backup can also be created from an operator workstation:
+
+```bash
+export DATABASE_URL='postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require'
+backup_file="safepath-$(date -u +%Y%m%dT%H%M%SZ).dump"
+pg_dump --dbname="$DATABASE_URL" --format=custom --file="$backup_file"
+pg_restore --list "$backup_file"
+```
+
+Protect the backup file because it contains session and administrator data. Encrypt it at rest and restrict access. Restore into an isolated database first:
+
+```bash
+export DIRECT_DATABASE_URL='postgresql://USER:PASSWORD@HOST/RESTORE_DATABASE?sslmode=require'
+pg_restore \
+  --dbname="$DIRECT_DATABASE_URL" \
+  --clean \
+  --if-exists \
+  --no-owner \
+  --exit-on-error \
+  safepath-YYYYMMDDTHHMMSSZ.dump
+```
+
+Stop application instances before restoring over an existing database. After restore, run `python manage.py migrate --check`, start one instance, verify `/health/ready/`, and test admin login. A successful database restore does not restore provider availability or the incident dataset.
+
+For local SQLite, use Python's online backup API instead of copying a live database file:
+
+```bash
+python - <<'PY'
+import sqlite3
+
+source = sqlite3.connect("db.sqlite3")
+target = sqlite3.connect("db.backup.sqlite3")
+with target:
+    source.backup(target)
+target.close()
+source.close()
+PY
+```
+
 ## Road data provider
 
 The route loader uses an Overpass-compatible read-only endpoint. Configure all three values:
@@ -129,7 +242,21 @@ The geocoder uses a dedicated file-based cache under `SAFEPATH_CACHE_DIR`. In th
 
 Production requires `SAFEPATH_CARTO_API_KEY`. Use a customer-owned, domain-restricted publishable key. Startup rejects obvious placeholder values. The value is sent directly from the browser to CARTO and is visible by design, so it is not a server secret and must not be stored as one. Do not proxy CARTO tiles through the application. Keep the visible Nominatim, OpenStreetMap, and CARTO attribution intact. Local development without a CARTO key uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile.
 
-The application cannot verify provider plans, quotas, licenses, or availability. Review [DATA_PROVIDERS.md](DATA_PROVIDERS.md) before deploying with public providers.
+The application cannot verify provider plans, quotas, licenses, or availability. Review [DATA_PROVIDERS.md](DATA_PROVIDERS.md) before deploying with public providers. The operator checklist is in [EXTERNAL_SERVICES.md](EXTERNAL_SERVICES.md).
+
+## Attribution and provider policies
+
+Keep the visible Nominatim, OpenStreetMap, and CARTO attribution intact. OpenStreetMap road data is available under the Open Database License, and the standard raster tile service has its own acceptable-use policy. Nominatim requires an identifying User-Agent, caching, no autocomplete, valid attribution, and no more than one request per second on the public service. CARTO basemap use is governed by the customer's plan and attribution terms. Do not replace a provider without repeating its licensing and attribution review.
+
+The technical configuration and request limits are documented in [DATA_PROVIDERS.md](DATA_PROVIDERS.md). The service inventory, credential classes, privacy boundary, failure behavior, and provider-change checklist are documented in [EXTERNAL_SERVICES.md](EXTERNAL_SERVICES.md).
+
+## Safety and routing limitations
+
+The bundled incident file is unverified demonstration data. Its original source, collection methodology, collection date, geographical coverage, license, and redistribution permission are unknown. It is not a live police or emergency feed. Confirm its license and redistribution permission before use beyond this academic demonstration.
+
+The reported record score is deterministic proximity to bundled demonstration records. It does not estimate crime probability, personal safety, or an individual's risk. Travel time comes from road class and available speed data, not live traffic. Record-proximity coverage measures whether a route lies within 200 metres of the bundled records; it does not establish real-world incident completeness. Partial or uncovered routes remain unrated, and the application does not assign a safest label without a fully covered eligible candidate.
+
+Road graphs are bounded snapshots from the selected provider. They do not apply OSM turn restrictions or relation-based restrictions, do not include live closures or traffic, and may differ from a turn-by-turn navigation service. Endpoint snapping and route diversity thresholds can affect candidates. At most four unique routes are returned, and fewer may exist when the graph does not support distinct connected paths.
 
 ## Migration modes
 

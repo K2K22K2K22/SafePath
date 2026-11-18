@@ -1,6 +1,6 @@
 # External Data Provider Policy
 
-SAFE PATH uses external providers for road geometry, geocoding, and map tiles. Provider configuration does not transfer responsibility for licensing, availability, or acceptable use to the application operator.
+SAFE PATH uses external providers for road geometry, geocoding, and map tiles. Provider configuration does not transfer responsibility for licensing, availability, or acceptable use to the application operator. See [EXTERNAL_SERVICES.md](EXTERNAL_SERVICES.md) for the operator service inventory, credential classes, attribution checklist, and failure-response guide.
 
 ## Road data
 
