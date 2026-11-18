@@ -1,5 +1,7 @@
 # SAFE PATH Improvement Roadmap
 
+> Status: completed implementation record. This document preserves the audit and plan from 17 November 2026. References to removed DeepSeek, OSRM, and legacy graph components describe the audited starting point, not the current application. See [ARCHITECTURE.md](ARCHITECTURE.md) and the project [README](../README.md) for current behavior.
+
 ## 1. Purpose and scope
 
 This roadmap records the repository audit completed on 17 November 2026. It converts the requested improvement programme into an incremental implementation plan based on the code that is currently present.
