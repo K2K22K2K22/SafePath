@@ -413,8 +413,11 @@ def _serialize_route(option):
         "safety_score": option.safety_score,
         "risk_level": option.risk_level,
         "risk_data_available": option.risk_data_available,
-        "incident_coverage_ratio": math.floor(option.incident_coverage_ratio * 10000)
-        / 10000,
+        "incident_coverage_ratio": (
+            1.0
+            if option.risk_data_available
+            else math.floor(min(option.incident_coverage_ratio, 0.9999) * 10000) / 10000
+        ),
         "nodes_explored": option.nodes_explored,
         "computation_time_ms": round(option.computation_time_ms, 3),
         "path_cost": round(option.path_cost, 3),

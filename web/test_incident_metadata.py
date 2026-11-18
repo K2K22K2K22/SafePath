@@ -95,3 +95,35 @@ class IncidentMetadataTests(SimpleTestCase):
             "unverified_demonstration_data",
         )
         self.assertIsNone(metadata["original_source"])
+        self.assertIsNone(metadata["record_nature"])
+
+    def test_metadata_cannot_claim_a_different_record_nature(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            metadata_path = Path(temporary_directory) / "source_metadata.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "dataset_file": "delhi_crime_data.csv",
+                        "verification_status": "unverified_demonstration_data",
+                        "verified": False,
+                        "record_nature": "verified police crime records",
+                        "original_source": None,
+                        "collection_methodology": None,
+                        "collection_date": None,
+                        "geographical_coverage": None,
+                        "license": None,
+                        "redistribution_permission": None,
+                        "repository_evidence": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "Model.utils.crime_loader.SOURCE_METADATA_FILE",
+                metadata_path,
+            ):
+                metadata = load_source_metadata()
+
+        self.assertFalse(metadata["verified"])
+        self.assertIsNone(metadata["record_nature"])

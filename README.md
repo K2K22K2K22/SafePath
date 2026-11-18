@@ -293,7 +293,7 @@ Current local result:
 - 155 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
-- Mypy passed for 36 source files
+- Mypy passed
 - ESLint and Node syntax checks passed
 - Tailwind build and Django system checks passed
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
