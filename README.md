@@ -54,7 +54,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-For local development, keep `DJANGO_DEBUG=True`. When debug mode is disabled, `DJANGO_SECRET_KEY` is mandatory and the application refuses to start without it.
+For local development, keep `DJANGO_DEBUG=True`. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and startup fails when either requirement is missing.
 
 Install frontend tooling and build the committed stylesheet:
 
@@ -84,7 +84,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The container exposes `PORT` (default `8000`), runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
+The container exposes `PORT` (default `8000`) on loopback, runs Gunicorn as an unprivileged user, can apply standard Django migrations at startup, and defines a health check against `/health/`. Compose runs production security settings, so browser traffic requires a local TLS-terminating proxy. Use the debug development server for ordinary local UI work. Compose loads `.env`, including `SAFEPATH_*` values, into the container. A one-shot initializer repairs SQLite volume ownership before the application starts, so upgrades from the earlier root-owned image remain usable. When `DATABASE_URL` is unset, SQLite data stays in the `safepath_data` named volume, so container startup does not create a database in the host checkout. The image contains the application source and must be rebuilt after a source change. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for migration modes and container operation.
 
 ## Configuration
 
@@ -93,15 +93,20 @@ All supported settings are documented in [.env.example](.env.example). Important
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DJANGO_DEBUG` | `False` | Enables development behavior and ephemeral local secret generation |
-| `DJANGO_SECRET_KEY` | unset | Required when debug mode is off |
-| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Accepted deployment hosts; loopback hosts are always retained for health checks |
-| `DATABASE_URL` | unset | PostgreSQL connection URL; unset uses local SQLite |
+| `DJANGO_SECRET_KEY` | unset | Required when debug mode is off; use at least 50 sufficiently random characters |
+| `DJANGO_ALLOWED_HOSTS` | local hosts in debug mode | Exact comma-separated production host names; wildcards are rejected |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | unset | Optional comma-separated exact HTTPS origins for cross-origin requests |
+| `DJANGO_TRUST_X_FORWARDED_PROTO` | `False` | Trust the proxy protocol header only when a trusted proxy replaces client headers |
+| `DJANGO_SECURE_HSTS_SECONDS` | `0` | HSTS lifetime in seconds; keep disabled until the deployed hostname and HTTPS redirect path are verified |
+| `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | `False` | Include subdomains in HSTS after verifying every subdomain supports HTTPS |
+| `DJANGO_SECURE_HSTS_PRELOAD` | `False` | Submit the domain to browser preload lists only after explicit review |
+| `DATABASE_URL` | unset | PostgreSQL connection URL with production TLS; unset uses local SQLite |
 | `SAFEPATH_DATABASE_CONN_MAX_AGE` | `60` | PostgreSQL connection lifetime in seconds |
 | `PORT` | `8000` | Container port used by Gunicorn |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
 | `GUNICORN_TIMEOUT` | `60` | Gunicorn request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Gunicorn graceful shutdown timeout in seconds |
-| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix; must exceed Gunicorn's graceful timeout |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix only; must exceed Gunicorn's graceful timeout |
 | `SAFEPATH_DATABASE_PATH` | Repository `db.sqlite3` | Optional SQLite path; Compose stores it in the `safepath_data` volume |
 | `SAFEPATH_RUN_MIGRATIONS` | `false` in the image | Run migrations before Gunicorn when set to `true` |
 | `SAFEPATH_GEOCODER_URL` | Nominatim search URL | Server-side geocoding proxy target |
@@ -273,10 +278,10 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 73 Django tests passed
+- 92 Django tests passed
 - 12 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
-- Mypy passed for 32 source files
+- Mypy passed for 35 source files
 - ESLint and Node syntax checks passed
 - Tailwind build and Django system checks passed
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities

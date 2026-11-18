@@ -17,12 +17,16 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --requirement requirements.txt
 
 COPY --chown=safepath:safepath manage.py gunicorn.conf.py ./
-COPY --chown=safepath:safepath Model web safepath_backend data ./
+COPY --chown=safepath:safepath Model /app/Model
+COPY --chown=safepath:safepath web /app/web
+COPY --chown=safepath:safepath safepath_backend /app/safepath_backend
+COPY --chown=safepath:safepath data /app/data
 COPY --chown=safepath:safepath docker/entrypoint.sh /app/docker/entrypoint.sh
+COPY --chown=safepath:safepath scripts/healthcheck.py /app/scripts/healthcheck.py
 
 RUN chmod 755 /app/docker/entrypoint.sh \
     && DJANGO_DEBUG=False \
-       DJANGO_SECRET_KEY=build-only-not-a-production-secret \
+       DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
        DJANGO_ALLOWED_HOSTS=localhost \
        python manage.py collectstatic --noinput --ignore "web/css/src/*"
 
@@ -30,6 +34,6 @@ USER safepath
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/health/', timeout=3)"
+    CMD python /app/scripts/healthcheck.py
 
 CMD ["/app/docker/entrypoint.sh"]

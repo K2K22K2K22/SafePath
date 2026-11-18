@@ -3,7 +3,7 @@ services:
     image: safepath:local
     build: .
     user: "0:0"
-    entrypoint: ["chown", "-R", "10001:10001", "/data"]
+    entrypoint: ["/bin/sh", "-c", "exec chown -R 10001:10001 /data"]
     command: []
     volumes:
       - safepath_data:/data
@@ -17,7 +17,7 @@ services:
       data-init:
         condition: service_completed_successfully
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
     volumes:
       - safepath_data:/data
     env_file:
@@ -27,7 +27,8 @@ services:
       - PORT=${PORT:-8000}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       - DJANGO_DEBUG=False
-      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}
+      - DJANGO_TRUST_X_FORWARDED_PROTO=${DJANGO_TRUST_X_FORWARDED_PROTO:-false}
       - SAFEPATH_DATABASE_PATH=/data/db.sqlite3
       - SAFEPATH_RUN_MIGRATIONS=${SAFEPATH_RUN_MIGRATIONS:-true}
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
@@ -35,6 +36,7 @@ services:
       - GUNICORN_GRACEFUL_TIMEOUT=${GUNICORN_GRACEFUL_TIMEOUT:-30}
       - DOCKER_STOP_GRACE_PERIOD=${DOCKER_STOP_GRACE_PERIOD:-40s}
     restart: unless-stopped
+    # Entry point accepts only integer seconds with an s suffix.
     stop_grace_period: "${DOCKER_STOP_GRACE_PERIOD:-40s}"
 
 volumes:

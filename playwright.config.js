@@ -17,6 +17,7 @@ module.exports = defineConfig({
   webServer: {
     command: `${pythonExecutable} manage.py runserver 127.0.0.1:8000 --noreload`,
     env: {
+      DATABASE_URL: "",
       DJANGO_DEBUG: "True",
       SAFEPATH_DATABASE_PATH: "/tmp/safepath-e2e.sqlite3",
     },

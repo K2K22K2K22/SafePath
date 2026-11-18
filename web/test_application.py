@@ -33,10 +33,6 @@ class ApplicationSmokeTests(SimpleTestCase):
         self.assertNotIn("Throught ABC Block", content)
         self.assertNotIn("Walk: 24 min", content)
 
-    def test_loopback_hosts_remain_available_for_health_checks(self):
-        self.assertIn("localhost", settings.ALLOWED_HOSTS)
-        self.assertIn("127.0.0.1", settings.ALLOWED_HOSTS)
-
     def test_health_endpoint_reports_ready(self):
         response = self.client.get("/health/", HTTP_HOST="localhost")
 

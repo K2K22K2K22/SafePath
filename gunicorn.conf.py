@@ -8,3 +8,5 @@ keepalive = 5
 accesslog = "-"
 errorlog = "-"
 capture_output = True
+# Django alone decides whether forwarded protocol headers are trusted.
+forwarded_allow_ips = ""

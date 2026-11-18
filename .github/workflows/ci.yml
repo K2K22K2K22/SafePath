@@ -77,6 +77,16 @@ jobs:
       - name: Django tests
         run: python manage.py test --verbosity 2
 
+      - name: Production deployment checks
+        env:
+          DATABASE_URL: postgresql://safepath:safepath@127.0.0.1:5432/safepath?sslmode=require
+          DJANGO_ALLOWED_HOSTS: safepath.example.com
+          DJANGO_DEBUG: "False"
+        run: |
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          python manage.py check --deploy
+          python scripts/check_production.py
+
       - name: Frontend build and lint
         run: |
           npm run build:css
@@ -102,7 +112,7 @@ jobs:
         run: |
           trap 'rm -f .env' EXIT
           cp .env.example .env
-          sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
+          sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')|" .env
           sed -i 's/^PORT=.*/PORT=9000/' .env
           docker compose config --format json > /tmp/safepath-compose.json
           python - <<'PY'
@@ -114,24 +124,27 @@ jobs:
           assert django["environment"]["PORT"] == "9000"
           assert django["ports"][0]["target"] == 9000
           assert django["ports"][0]["published"] == "9000"
+          assert django["ports"][0]["host_ip"] == "127.0.0.1"
           assert django["environment"]["SAFEPATH_DATABASE_PATH"] == "/data/db.sqlite3"
           assert django["environment"]["SAFEPATH_RUN_MIGRATIONS"] == "true"
+          assert django["environment"]["DJANGO_TRUST_X_FORWARDED_PROTO"] == "False"
           assert django["volumes"][0]["source"] == "safepath_data"
           assert django["stop_grace_period"] == "40s"
           assert django["depends_on"]["data-init"]["condition"] == "service_completed_successfully"
           assert config["services"]["data-init"]["user"] == "0:0"
           assert config["services"]["data-init"]["entrypoint"] == [
-              "chown", "-R", "10001:10001", "/data"
+              "/bin/sh", "-c", "exec chown -R 10001:10001 /data"
           ]
           assert config["services"]["data-init"]["command"] == []
           PY
 
       - name: Docker Compose startup
         run: |
-          trap 'docker compose down --volumes; rm -f .env' EXIT
+          trap 'docker compose down --volumes --timeout 40; rm -f .env' EXIT
           export COMPOSE_PROJECT_NAME=safepath-ci
           cp .env.example .env
-          sed -i 's/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=ci-only-secret/' .env
+          sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')|" .env
+          sed -i 's/^DJANGO_TRUST_X_FORWARDED_PROTO=.*/DJANGO_TRUST_X_FORWARDED_PROTO=True/' .env
           docker compose build
           docker volume create \
             --label com.docker.compose.project=safepath-ci \
@@ -143,9 +156,9 @@ jobs:
             "$image_id" touch /data/legacy-root-owned
           docker compose up --detach
           init_id="$(docker compose ps -aq data-init)"
-          test "$(docker inspect --format '{{.Path}}' "$init_id")" = "chown"
-          test "$(docker inspect --format '{{json .Args}}' "$init_id")" = \
-            '["-R","10001:10001","/data"]'
+          test "$(docker inspect --format '{{.Path}}' "$init_id")" = "/bin/sh"
+          docker inspect --format '{{json .Args}}' "$init_id" | \
+            grep -q 'exec chown -R 10001:10001 /data'
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath_django)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath_django)"
@@ -184,18 +197,22 @@ jobs:
           python scripts/verify_static_assets.py \
             --base-url http://127.0.0.1:8000 \
             --manifest /tmp/safepath-staticfiles.json
+          test "$(docker inspect --format '{{.Config.StopTimeout}}' safepath_django)" = "40"
           docker compose stop django
           test "$(docker inspect --format '{{.State.ExitCode}}' safepath_django)" = "0"
 
       - name: Docker build and health check
         run: |
+          secret_key="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
           docker build --tag safepath-ci .
           docker run --detach --name safepath-ci \
             --stop-timeout 40 \
-            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env DJANGO_TRUST_X_FORWARDED_PROTO=True \
             --env SAFEPATH_RUN_MIGRATIONS=true \
-            --publish 8000:8000 safepath-ci
+            --publish 127.0.0.1:8000:8000 safepath-ci
+          test "$(docker inspect --format '{{.Config.StopTimeout}}' safepath-ci)" = "40"
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci)"
@@ -225,6 +242,7 @@ jobs:
             safepath-ci:/app/staticfiles/staticfiles.json /tmp/safepath-staticfiles.json
           python scripts/verify_static_assets.py \
             --base-url http://127.0.0.1:8000 \
+            --host-header safepath.example.com \
             --manifest /tmp/safepath-staticfiles.json
           docker exec safepath-ci python manage.py migrate --check || {
             docker logs safepath-ci
@@ -244,10 +262,12 @@ jobs:
 
           docker run --detach --name safepath-ci-no-migrations \
             --stop-timeout 40 \
-            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env DJANGO_TRUST_X_FORWARDED_PROTO=True \
             --env SAFEPATH_RUN_MIGRATIONS=false \
             safepath-ci
+          test "$(docker inspect --format '{{.Config.StopTimeout}}' safepath-ci-no-migrations)" = "40"
           for attempt in {1..60}; do
             container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci-no-migrations)"
             health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci-no-migrations)"
@@ -270,12 +290,56 @@ jobs:
             docker logs safepath-ci-no-migrations
             exit 1
           fi
-          docker stop --timeout 40 safepath-ci-no-migrations
+          docker stop safepath-ci-no-migrations
           test "$(docker inspect --format '{{.State.ExitCode}}' safepath-ci-no-migrations)" = "0"
+
+          docker run --detach --name safepath-ci-trust-off \
+            --stop-timeout 40 \
+            --env DJANGO_SECRET_KEY="$secret_key" \
+            --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
+            --env SAFEPATH_RUN_MIGRATIONS=false \
+            safepath-ci
+          test "$(docker inspect --format '{{.Config.StopTimeout}}' safepath-ci-trust-off)" = "40"
+          for attempt in {1..60}; do
+            container_status="$(docker inspect --format '{{.State.Status}}' safepath-ci-trust-off)"
+            health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci-trust-off)"
+            if [ "$health_status" = "healthy" ]; then
+              break
+            fi
+            if [ "$container_status" = "exited" ] || [ "$health_status" = "unhealthy" ]; then
+              docker logs safepath-ci-trust-off
+              exit 1
+            fi
+            sleep 2
+          done
+          health_status="$(docker inspect --format '{{.State.Health.Status}}' safepath-ci-trust-off)"
+          if [ "$health_status" != "healthy" ]; then
+            docker logs safepath-ci-trust-off
+            exit 1
+          fi
+          docker exec -i safepath-ci-trust-off python - <<'PY'
+          from http.client import HTTPConnection
+
+          connection = HTTPConnection("127.0.0.1", 8000, timeout=3)
+          connection.request(
+              "GET",
+              "/health/",
+              headers={
+                  "Host": "safepath.example.com",
+                  "X-Forwarded-Proto": "https",
+              },
+          )
+          response = connection.getresponse()
+          assert response.status == 301, response.status
+          assert response.getheader("Location") == "https://safepath.example.com/health/"
+          connection.close()
+          PY
+          docker stop safepath-ci-trust-off
+          test "$(docker inspect --format '{{.State.ExitCode}}' safepath-ci-trust-off)" = "0"
 
           set +e
           docker run --rm \
-            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
             --env SAFEPATH_RUN_MIGRATIONS=invalid \
             safepath-ci
@@ -285,7 +349,7 @@ jobs:
 
           set +e
           docker run --rm \
-            --env DJANGO_SECRET_KEY=ci-only-secret \
+            --env DJANGO_SECRET_KEY="$secret_key" \
             --env DJANGO_ALLOWED_HOSTS=safepath.example.com \
             --env SAFEPATH_RUN_MIGRATIONS=false \
             --env GUNICORN_GRACEFUL_TIMEOUT=30 \
@@ -295,5 +359,5 @@ jobs:
           set -e
           test "$invalid_grace_status" -eq 64
 
-          docker stop --timeout 40 safepath-ci
+          docker stop safepath-ci
           test "$(docker inspect --format '{{.State.ExitCode}}' safepath-ci)" = "0"

@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import urlparse, urlsplit
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -33,13 +34,100 @@ if not SECRET_KEY:
             "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false."
         )
     SECRET_KEY = secrets.token_urlsafe(50)
+secret_markers = ("build-only", "ci-only", "example", "replace-with")
+if not DEBUG and (
+    len(SECRET_KEY) < 50
+    or SECRET_KEY.startswith("django-insecure-")
+    or len(set(SECRET_KEY)) < 12
+    or any(marker in SECRET_KEY.lower() for marker in secret_markers)
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be a random value of at least 50 characters "
+        "with at least 12 distinct characters and no placeholder marker "
+        "(build-only, ci-only, example, replace-with)."
+    )
 
 configured_hosts = [
     host.strip()
-    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    for host in (os.environ.get("DJANGO_ALLOWED_HOSTS") or "").split(",")
     if host.strip()
 ]
-ALLOWED_HOSTS = list(dict.fromkeys([*configured_hosts, "localhost", "127.0.0.1"]))
+if not DEBUG and not configured_hosts:
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must list at least one production host."
+    )
+if not DEBUG and any(host.startswith(("*", ".")) for host in configured_hosts):
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must use exact host names without wildcards."
+    )
+if not DEBUG and any(":" in host for host in configured_hosts):
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must use host names without ports."
+    )
+if DEBUG:
+    configured_hosts.extend(
+        host for host in ("localhost", "127.0.0.1") if host not in configured_hosts
+    )
+ALLOWED_HOSTS = list(dict.fromkeys(configured_hosts))
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in (os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS") or "").split(",")
+    if origin.strip()
+]
+if not DEBUG:
+    for origin in CSRF_TRUSTED_ORIGINS:
+        parsed_origin = urlparse(origin)
+        if (
+            parsed_origin.scheme != "https"
+            or not parsed_origin.netloc
+            or parsed_origin.path
+            or parsed_origin.query
+            or parsed_origin.fragment
+            or "*" in origin
+        ):
+            raise ImproperlyConfigured(
+                "DJANGO_CSRF_TRUSTED_ORIGINS must contain exact HTTPS origins."
+            )
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_SSL_REDIRECT = not DEBUG
+trust_forwarded_proto = os.environ.get(
+    "DJANGO_TRUST_X_FORWARDED_PROTO", "False"
+).lower() in {"1", "true", "yes", "on"}
+# Enable only behind a proxy that replaces client X-Forwarded-Proto headers.
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https") if trust_forwarded_proto else None
+)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+try:
+    SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0"))
+except ValueError as error:
+    raise ImproperlyConfigured(
+        "DJANGO_SECURE_HSTS_SECONDS must be an integer."
+    ) from error
+if SECURE_HSTS_SECONDS < 0:
+    raise ImproperlyConfigured("DJANGO_SECURE_HSTS_SECONDS must not be negative.")
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", "False"
+).lower() in {"1", "true", "yes", "on"}
+SECURE_HSTS_PRELOAD = os.environ.get("DJANGO_SECURE_HSTS_PRELOAD", "False").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+if SECURE_HSTS_SECONDS == 0 and (SECURE_HSTS_INCLUDE_SUBDOMAINS or SECURE_HSTS_PRELOAD):
+    raise ImproperlyConfigured(
+        "DJANGO_SECURE_HSTS_SECONDS must be positive when HSTS options are enabled."
+    )
 
 
 # Application definition
@@ -92,9 +180,9 @@ WSGI_APPLICATION = "safepath_backend.wsgi.application"
 DATABASE_PATH = Path(
     os.environ.get("SAFEPATH_DATABASE_PATH") or BASE_DIR / "db.sqlite3"
 ).resolve()
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+database_url = os.environ.get("DATABASE_URL", "").strip()
 
-if DATABASE_URL:
+if database_url:
     try:
         conn_max_age = int(os.environ.get("SAFEPATH_DATABASE_CONN_MAX_AGE", "60"))
     except ValueError as error:
@@ -106,19 +194,43 @@ if DATABASE_URL:
             "SAFEPATH_DATABASE_CONN_MAX_AGE must not be negative."
         )
     try:
-        DATABASES = {
-            "default": dj_database_url.parse(
-                DATABASE_URL,
-                conn_max_age=conn_max_age,
-                conn_health_checks=True,
-            )
-        }
+        scheme = urlsplit(database_url).scheme.lower()
     except ValueError as error:
         raise ImproperlyConfigured("DATABASE_URL is invalid.") from error
-    if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
+    if scheme not in {"postgres", "postgresql"}:
         raise ImproperlyConfigured(
             "DATABASE_URL must use the postgres:// or postgresql:// scheme."
         )
+    try:
+        database = dj_database_url.parse(
+            database_url,
+            conn_max_age=conn_max_age,
+            conn_health_checks=True,
+        )
+    except ValueError as error:
+        raise ImproperlyConfigured("DATABASE_URL is invalid.") from error
+    database_options = database.get("OPTIONS", {})
+    sslmode = database_options.get("sslmode")
+    if not DEBUG and (
+        not isinstance(sslmode, str)
+        or sslmode not in {"require", "verify-ca", "verify-full"}
+    ):
+        raise ImproperlyConfigured(
+            "Production DATABASE_URL must use sslmode=require, verify-ca, or verify-full."
+        )
+    allowed_database_options = {
+        "sslmode",
+        "sslrootcert",
+        "sslcert",
+        "sslkey",
+        "sslcrl",
+    }
+    if not DEBUG and set(database_options) - allowed_database_options:
+        raise ImproperlyConfigured(
+            "Production DATABASE_URL must not override libpq connection options. "
+            "Only TLS options are accepted."
+        )
+    DATABASES = {"default": database}
 else:
     DATABASES = {
         "default": {

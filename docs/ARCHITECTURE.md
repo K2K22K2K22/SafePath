@@ -284,7 +284,8 @@ Route rendering uses a dedicated Leaflet pane. Route colors are assigned by rout
 
 | Boundary | Safeguard |
 | --- | --- |
-| Browser to Django | Relative API paths, DRF parsing, coordinate validation, scoped throttling, no HTTP `Origin` enforcement |
+| Browser to Django | Relative API paths, DRF parsing, coordinate validation, scoped throttling, exact production hosts, HTTPS redirect, secure cookies, no HTTP `Origin` enforcement |
+| Proxy to Django | Gunicorn forwarded-scheme handling disabled; explicit Django opt-in for `X-Forwarded-Proto`, only behind a proxy that replaces client-supplied headers |
 | Django to OSM | HTTPS host allowlist, no redirects, stream byte limit, request limit, depth limit, DTD and entity rejection |
 | Django to Nominatim | HTTPS host allowlist, no redirects, connect and read timeouts, response coordinate validation |
 | Incident CSV | Exact-row deduplication, finite value checks, coordinate range checks, severity range checks |
@@ -338,7 +339,7 @@ flowchart TB
     Image --> Probe
 ```
 
-The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container. `DATABASE_URL` selects PostgreSQL for deployed environments; SQLite uses the `safepath_data` named volume rather than the host checkout. A production deployment still needs TLS termination, provider credentials, and an appropriate secret-management process.
+The checked-in container runs Gunicorn as an unprivileged user and serves collected static files through WhiteNoise. It can apply standard Django migrations at startup, while Compose uses a one-shot initializer to repair SQLite volume ownership before the application starts. Compose loads `.env`, including `SAFEPATH_*` values, into the container and binds the application to loopback for a local TLS proxy. `DATABASE_URL` selects PostgreSQL for deployed environments; SQLite uses the `safepath_data` named volume rather than the host checkout. Production mode requires an exact host allowlist, a strong secret, HTTPS redirects, secure cookies, and explicit trust for forwarded protocol only behind a controlled proxy. A production deployment still needs provider credentials and an appropriate secret-management process.
 
 ## 12. Test boundaries
 

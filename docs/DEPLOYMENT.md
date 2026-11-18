@@ -10,11 +10,40 @@ SAFE PATH runs under Gunicorn in the production container. The configuration rea
 | `GUNICORN_WORKERS` | `2` | Number of worker processes |
 | `GUNICORN_TIMEOUT` | `60` | Worker request timeout in seconds |
 | `GUNICORN_GRACEFUL_TIMEOUT` | `30` | Graceful shutdown timeout in seconds |
-| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
+| `DOCKER_STOP_GRACE_PERIOD` | `40s` | Docker shutdown grace in integer seconds with an `s` suffix only; keep it greater than `GUNICORN_GRACEFUL_TIMEOUT` |
 
 Gunicorn binds to `0.0.0.0` and forwards the configured graceful timeout when the platform sends a termination signal. The container redirects standard error to standard output before migrations and Gunicorn start, so all container process logs use one stream. Startup fails with exit code 64 unless the Gunicorn grace is integer seconds, the Docker stop grace uses the same integer-second format with an `s` suffix, and the Docker stop grace is greater than the Gunicorn graceful timeout. Docker must therefore allow more time than Gunicorn's graceful timeout or it can terminate workers before graceful shutdown finishes.
 
 The container runs as the unprivileged `safepath` user. It does not include `.env` files and does not run migrations during the image build. The image build runs `collectstatic`, and WhiteNoise serves compressed, manifest-based assets from the production runtime.
+
+## Production security
+
+Production startup fails when `DJANGO_SECRET_KEY` is missing, shorter than 50 characters, insufficiently varied, starts with `django-insecure-`, or contains a known placeholder marker. Generate a new secret for every environment and store it in the platform secret manager:
+
+```bash
+python -c 'import secrets; print(secrets.token_urlsafe(64))'
+```
+
+Set `DJANGO_ALLOWED_HOSTS` to comma-separated exact host names without ports. Wildcard hosts are rejected in production, and loopback hosts are not added automatically. Set `DJANGO_CSRF_TRUSTED_ORIGINS` only for required cross-origin requests, using exact HTTPS origins without paths.
+
+Production mode redirects HTTP to HTTPS and marks session and CSRF cookies secure. Gunicorn's own forwarded-scheme handling is disabled, but the raw header still reaches Django. Django ignores `X-Forwarded-Proto` by default and trusts it only when `DJANGO_TRUST_X_FORWARDED_PROTO=True` is set for a deployment whose trusted reverse proxy removes client-supplied forwarded headers and sets its own. Enable that flag whenever a TLS-terminating proxy fronts the application; otherwise the health probe reports an HTTPS redirect and user requests can enter a redirect loop. Do not expose Gunicorn directly to the public Internet. The included Compose service binds to `127.0.0.1` so only a local proxy can reach it.
+
+HSTS remains disabled by default. After the deployed hostname, certificate, and HTTPS redirect path have been verified, set `DJANGO_SECURE_HSTS_SECONDS` to a deliberate lifetime. Enable `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` only when every subdomain supports HTTPS. Browser preload submission is a separate, explicit decision. The subdomain and preload options fail startup when the HSTS duration is zero.
+
+Run the production checks with the same environment used by the deployment:
+
+```bash
+DJANGO_DEBUG=False \
+DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
+DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+python manage.py check --deploy
+DJANGO_DEBUG=False \
+DJANGO_SECRET_KEY="$(cat /run/secrets/safepath_secret_key)" \
+DJANGO_ALLOWED_HOSTS="safepath.example.com" \
+python scripts/check_production.py
+```
+
+Django reports `security.W004` while HSTS is deliberately disabled. The production check script permits only the HSTS warnings `security.W004`, `security.W005`, and `security.W021`; every other warning or error fails the gate.
 
 ## Static assets
 
@@ -34,10 +63,12 @@ The secret file must be readable only by the release process, so shell history r
 Set `DATABASE_URL` to a PostgreSQL URL for deployed environments:
 
 ```bash
-DATABASE_URL='postgresql://safepath:url-encoded-password@db.example.com:5432/safepath?sslmode=require'
+DATABASE_URL='postgresql://safepath:url-encoded-password@db.example.com:5432/safepath?sslmode=verify-full&sslrootcert=/run/secrets/postgresql-ca.pem'
 ```
 
-The `postgres://` and `postgresql://` schemes are supported. URL query options are passed to PostgreSQL, including `sslmode` and `sslrootcert`. Certificate paths must exist in the runtime image or mounted secret store. Percent-encode reserved characters in credentials. When `DATABASE_URL` is unset, SAFE PATH uses SQLite at `SAFEPATH_DATABASE_PATH`.
+The `postgres://` and `postgresql://` schemes are supported. Production URLs accept only PostgreSQL TLS query options: `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, and `sslcrl`. Certificate paths must exist in the runtime image or mounted secret store. Percent-encode reserved characters in credentials. When `DATABASE_URL` is unset, SAFE PATH uses SQLite at `SAFEPATH_DATABASE_PATH`.
+
+Production mode rejects a PostgreSQL URL without `sslmode=require`, `verify-ca`, or `verify-full`. Prefer certificate verification. `require` encrypts the connection but does not authenticate the server certificate. The weaker `prefer`, `allow`, and `disable` modes are rejected. Production URLs reject every non-TLS query option so a secondary connection parameter cannot bypass the validated TLS mode or redirect the connection target.
 
 PostgreSQL connections persist for `SAFEPATH_DATABASE_CONN_MAX_AGE` seconds, default `60`, and Django checks persistent connections before reuse. Run migrations against the same database before starting the release.
 
@@ -64,12 +95,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Compose starts Gunicorn on `PORT` (default `8000`), runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change.
+Compose starts Gunicorn on `PORT` (default `8000`), binds it to `127.0.0.1`, runs migrations because `SAFEPATH_RUN_MIGRATIONS` defaults to `true`, and stores SQLite in the `safepath_data` named volume. Its short-lived `data-init` service changes that volume to UID and GID `10001` before the non-root application starts, including when upgrading a volume created by an older root-owned image. The image contains the application source, so rebuild it after a source change. The container health probe sends the first configured production host instead of an implicit loopback host.
 
 Check the service:
 
 ```bash
-curl --fail http://127.0.0.1:8000/health/
+docker compose exec django python /app/scripts/healthcheck.py
 docker compose logs django
 ```
 
@@ -91,12 +122,13 @@ The image reads `PORT` and starts Gunicorn after the selected migration step:
 
 ```bash
 docker build --tag safepath .
-docker run --rm --publish "${PORT:-8000}:${PORT:-8000}" \
+docker run --rm --publish "127.0.0.1:${PORT:-8000}:${PORT:-8000}" \
   --stop-timeout 40 \
   --env-file .env \
   --env PORT="${PORT:-8000}" \
   --env DJANGO_DEBUG=False \
   --env DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1" \
+  --env DJANGO_TRUST_X_FORWARDED_PROTO=False \
   --env SAFEPATH_DATABASE_PATH=/data/db.sqlite3 \
   --env SAFEPATH_RUN_MIGRATIONS=true \
   --env GUNICORN_GRACEFUL_TIMEOUT=30 \
@@ -105,7 +137,7 @@ docker run --rm --publish "${PORT:-8000}:${PORT:-8000}" \
   safepath
 ```
 
-Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation. The image cannot encode a Docker stop timeout, so direct `docker run` commands must pass `--stop-timeout` with the same number of seconds as `DOCKER_STOP_GRACE_PERIOD`. A direct container using a volume created by an older root-owned image needs a one-time ownership repair before it can start as the non-root user:
+Do not pass a production secret directly on a shared shell history. Use the platform's secret manager or an ignored environment file for local evaluation. The direct command binds to loopback and keeps forwarded-header trust disabled. Put a TLS-terminating proxy in front of it, and enable forwarded-header trust only in that proxy deployment. The image cannot encode a Docker stop timeout, so direct `docker run` commands must pass `--stop-timeout` with the same number of seconds as `DOCKER_STOP_GRACE_PERIOD`. A direct container using a volume created by an older root-owned image needs a one-time ownership repair before it can start as the non-root user:
 
 ```bash
 docker run --rm --user root \

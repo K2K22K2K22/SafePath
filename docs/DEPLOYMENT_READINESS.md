@@ -44,7 +44,19 @@ The latest remote CI run for `9085090` passed Python, frontend, browser, and Com
 
 ## Phase 1 runtime lifecycle
 
-Commits `d4c06e6` and `ca7f9ee` replaced the development server with Gunicorn, added a non-root image, constrained migration mode, repaired legacy SQLite volume ownership, sent container logs to one stream, and enforced a Docker stop grace greater than the Gunicorn graceful timeout. Local Compose configuration, entrypoint, Gunicorn, and test checks pass. The Docker daemon was unavailable locally, so the first remote CI run of the strengthened container lifecycle remains the required runtime evidence.
+Commits `d4c06e6`, `ca7f9ee`, and `eac9d12` replaced the development server with Gunicorn, added a non-root image, constrained migration mode, repaired legacy SQLite volume ownership, sent container logs to one stream, and enforced a Docker stop grace greater than the Gunicorn graceful timeout. Local Compose configuration, entrypoint, Gunicorn, and test checks pass. The Docker daemon was unavailable locally, so the first remote CI run of the strengthened container lifecycle remains the required runtime evidence.
+
+## Phase 2 static assets
+
+Commits `0c5dad8` and `74f6bbf` configured WhiteNoise with compressed manifest storage and added live verification for rendered URLs, CSS references, content types, redirects, and gzip payloads. Production static collection passes locally.
+
+## Phase 3 PostgreSQL
+
+Commit `c1638f5` added `DATABASE_URL` support through `dj-database-url`, PostgreSQL SSL query options, persistent connection health checks, SQLite fallback, and PostgreSQL CI migrations and tests. The security phase also requires encrypted production PostgreSQL connections, keeps the raw connection URL out of Django's uppercase settings, and verifies a database-backed session round trip. PostgreSQL 16.16 passed migrations, `migrate --check`, and the Django suite locally through Podman.
+
+## Phase 4 security
+
+Production settings now require a strong secret and exact host names, redirect HTTP to HTTPS, mark session and CSRF cookies secure, validate trusted CSRF origins, and keep HSTS disabled by default. Forwarded-protocol trust is disabled unless explicitly enabled behind a controlled proxy, and Compose binds the application to loopback. Health and static-asset probes use an explicit host header so they work without weakening the production host allowlist. The production check gate permits only the documented, deferred HSTS warnings and fails on every other deployment warning or error. The final local matrix passed 92 Django tests on SQLite and PostgreSQL, Python lint, format, type, compile, and dependency checks, frontend build, lint, syntax, and 12 browser tests. Podman rebuilt the image and verified static collection, migrations, non-root Gunicorn, trusted and untrusted forwarded-protocol behavior, the health probe, volume ownership repair, and every manifest, CSS reference, and gzip response. Native Docker and remote CI remain required for final runtime evidence.
 
 ## Baseline deployment posture at commit `9085090`
 
