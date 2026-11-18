@@ -259,11 +259,24 @@ class OperationsLoggingTests(SimpleTestCase):
             "authorization=Basic private-token",
             "authorization=private-token",
             '"authorization": "Bearer private-token"',
+            'authorization="Bearer private token"',
+            "Authorization: Bearer private-token,private-tail",
         ):
             with self.subTest(credential=credential):
                 message = redact_query_values(credential)
                 self.assertNotIn("private-token", message)
                 self.assertIn("[redacted]", message)
+
+    def test_log_formatter_redacts_prefixed_and_space_containing_values(self):
+        from safepath_backend.logging import redact_query_values
+
+        message = redact_query_values(
+            "oauth_token=private-token GET /api/geocode/?q=New York NY HTTP/1.1"
+        )
+
+        self.assertNotIn("private-token", message)
+        self.assertNotIn("New York NY", message)
+        self.assertIn("[redacted]", message)
 
     def test_log_formatter_redacts_exception_text(self):
         from safepath_backend.logging import SafeLogFormatter
@@ -287,6 +300,30 @@ class OperationsLoggingTests(SimpleTestCase):
         formatted = formatter.format(record)
         self.assertNotIn("private-value", formatted)
         self.assertIn("RuntimeError: [details redacted]", formatted)
+
+    def test_log_formatter_redacts_exception_text_before_query_redaction(self):
+        from safepath_backend.logging import SafeLogFormatter
+
+        formatter = SafeLogFormatter("%(message)s")
+        try:
+            raise RuntimeError("upstream GET https://example.test/api?q=private failed")
+        except RuntimeError:
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            "gunicorn.error",
+            logging.ERROR,
+            __file__,
+            1,
+            f"Failed: {exc_info[1]}",
+            (),
+            exc_info,
+        )
+
+        formatted = formatter.format(record)
+        self.assertNotIn("upstream GET", formatted)
+        self.assertNotIn("private", formatted)
+        self.assertIn("[details redacted]", formatted)
 
     def test_log_formatter_redacts_exception_used_as_log_message(self):
         from safepath_backend.logging import SafeLogFormatter
