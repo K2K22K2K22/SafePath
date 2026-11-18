@@ -20,12 +20,13 @@ These are reserved example values. Replace them with the operator's approved pro
 
 Production mode requires the configured provider host to appear in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`. Known public Overpass hosts remain rejected even when an operator lists one. The denylist was reviewed against the OSM Wiki public-instance list on 18 November 2026 and must be reviewed when that list changes. Host comparisons are canonicalized so case, IDNA form, and a trailing DNS dot cannot bypass either list.
 
-The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command. It also requires the operator-provided Django secret, customer-owned CARTO key, deployed host, and approved provider values, so export them before running it:
+The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command. It also requires the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, and approved provider values, so export them before running it:
 
 ```bash
 : "${DJANGO_SECRET_KEY:?Export the operator-provided Django secret}"
 : "${SAFEPATH_CARTO_API_KEY:?Export the customer-owned CARTO key}"
 : "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
+: "${DATABASE_URL:?Export the production PostgreSQL URL}"
 : "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
 : "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
 : "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
@@ -33,6 +34,7 @@ The production check script applies the same rule even when `DJANGO_DEBUG` is en
 export DJANGO_SECRET_KEY
 export SAFEPATH_CARTO_API_KEY
 export DJANGO_ALLOWED_HOSTS
+export DATABASE_URL
 export SAFEPATH_OSM_API_URL
 export SAFEPATH_OSM_API_ALLOWED_HOSTS
 export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS

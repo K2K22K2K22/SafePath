@@ -103,12 +103,13 @@ Production mode redirects HTTP to HTTPS and marks session and CSRF cookies secur
 
 HSTS remains disabled by default. After the deployed hostname, certificate, and HTTPS redirect path have been verified, set `DJANGO_SECURE_HSTS_SECONDS` to a deliberate lifetime. Enable `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` only when every subdomain supports HTTPS. Browser preload submission is a separate, explicit decision. The subdomain and preload options fail startup when the HSTS duration is zero.
 
-Run the production checks with the same environment used by the deployment. The shell must already contain the operator-provided Django secret, customer-owned CARTO key, deployed host, and approved road-provider values from the platform environment. Do not substitute placeholder values; production settings intentionally reject them.
+Run the production checks with the same environment used by the deployment. The shell must already contain the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, and approved road-provider values from the platform environment. Do not substitute placeholder values; production settings intentionally reject them.
 
 ```bash
 : "${DJANGO_SECRET_KEY:?Export the operator-provided Django secret}"
 : "${SAFEPATH_CARTO_API_KEY:?Export the customer-owned CARTO key}"
 : "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
+: "${DATABASE_URL:?Export the production PostgreSQL URL}"
 : "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
 : "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
 : "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
@@ -116,6 +117,7 @@ Run the production checks with the same environment used by the deployment. The 
 export DJANGO_SECRET_KEY
 export SAFEPATH_CARTO_API_KEY
 export DJANGO_ALLOWED_HOSTS
+export DATABASE_URL
 export SAFEPATH_OSM_API_URL
 export SAFEPATH_OSM_API_ALLOWED_HOSTS
 export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
@@ -135,9 +137,9 @@ pip-audit --requirement requirements.txt --progress-spinner off
 npm audit --omit=dev
 ```
 
-Both commands must complete without findings. An earlier full `npm audit` run reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. They mapped to `GHSA-fc5q-39xc-vjpf`, which was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. The current full npm audit reports zero vulnerabilities.
+Both commands must complete without findings. An earlier full `npm audit` run reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The `picomatch` advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. No patched upstream `picomatch` release was available during this review, and withdrawn advisories are no longer returned by `npm audit`. SAFE PATH never accepts user-controlled glob patterns, `picomatch` is development-only, and the current audits report zero findings without proving that withdrawn advisory was fixed. CI keeps both audit commands enabled and separately requires `picomatch` to remain absent from the production dependency tree.
 
-SAFE PATH never accepts user-controlled glob patterns. The affected development code would run only during local and CI Tailwind glob matching with repository-controlled paths, and it is not installed as a production application dependency. Do not apply `npm audit fix --force`, and do not replace the pinned Tailwind toolchain with an unverified major version. CI requires both npm audit commands to remain clean. Any new finding must fail review until its exposure and mitigation are documented.
+The affected development code would run only during local and CI Tailwind glob matching with repository-controlled paths, and it is not installed as a production application dependency. Do not apply `npm audit fix --force`, and do not replace the pinned Tailwind toolchain with an unverified major version. Any new finding must fail review until its exposure and mitigation are documented.
 
 ## Static assets
 
@@ -157,7 +159,7 @@ Set `DATABASE_URL` to a PostgreSQL URL for deployed environments:
 DATABASE_URL='postgresql://safepath:url-encoded-password@db.example.com:5432/safepath?sslmode=verify-full&sslrootcert=/run/secrets/postgresql-ca.pem'
 ```
 
-The `postgres://` and `postgresql://` schemes are supported. Production URLs accept only PostgreSQL TLS query options: `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, and `sslcrl`. Certificate paths must exist in the runtime image or mounted secret store. Percent-encode reserved characters in credentials. When `DATABASE_URL` is unset, SAFE PATH uses SQLite at `SAFEPATH_DATABASE_PATH`.
+The `postgres://` and `postgresql://` schemes are supported. Production URLs accept only PostgreSQL TLS query options: `sslmode`, `sslrootcert`, `sslcert`, `sslkey`, and `sslcrl`. Certificate paths must exist in the runtime image or mounted secret store. Percent-encode reserved characters in credentials. Local development and Compose use SQLite at `SAFEPATH_DATABASE_PATH` when `DATABASE_URL` is unset. The Render startup command runs `scripts/check_production.py`, which rejects a missing PostgreSQL URL before migrations or Gunicorn start.
 
 Production mode rejects a PostgreSQL URL without `sslmode=require`, `verify-ca`, or `verify-full`. Prefer certificate verification. `require` encrypts the connection but does not authenticate the server certificate. The weaker `prefer`, `allow`, and `disable` modes are rejected. Production URLs reject every non-TLS query option so a secondary connection parameter cannot bypass the validated TLS mode or redirect the connection target.
 
@@ -209,17 +211,24 @@ DATABASE_URL="$DIRECT_DATABASE_URL" python manage.py migrate --check
 
 Then start one instance, verify `/health/ready/`, and test admin login. A successful database restore does not restore provider availability or the incident dataset.
 
-For local SQLite, use Python's online backup API instead of copying a live database file. The source path honors `SAFEPATH_DATABASE_PATH` and defaults to the repository's `db.sqlite3`:
+For local SQLite, use Python's online backup API instead of copying a live database file. Run these commands from the checkout root. `manage.py` loads `.env`, and Django resolves the same absolute SQLite path used by the application, including `SAFEPATH_DATABASE_PATH` and the default `BASE_DIR/db.sqlite3`:
 
 ```bash
-export SAFEPATH_SQLITE_BACKUP_PATH="${SAFEPATH_SQLITE_BACKUP_PATH:-${SAFEPATH_DATABASE_PATH:-db.sqlite3}.backup}"
-python - <<'PY'
+DATABASE_URL= DJANGO_DEBUG=True python manage.py shell <<'PY'
 import os
 import sqlite3
 from pathlib import Path
 
-source_path = Path(os.environ.get("SAFEPATH_DATABASE_PATH") or "db.sqlite3")
-backup_path = Path(os.environ["SAFEPATH_SQLITE_BACKUP_PATH"])
+from django.conf import settings
+
+database = settings.DATABASES["default"]
+if database["ENGINE"] != "django.db.backends.sqlite3":
+    raise SystemExit("The active application database is not SQLite.")
+
+source_path = Path(database["NAME"])
+backup_path = Path(
+    os.environ.get("SAFEPATH_SQLITE_BACKUP_PATH") or f"{source_path}.backup"
+).expanduser().resolve()
 if not source_path.is_file():
     raise SystemExit(f"SQLite database does not exist: {source_path}")
 
@@ -229,20 +238,27 @@ with target:
     source.backup(target)
 target.close()
 source.close()
+print(f"SQLite backup written to {backup_path}")
 PY
 ```
 
-Restore only while application instances are stopped. This replaces the configured SQLite database with the backup contents:
+Restore only while application instances are stopped. Set `SAFEPATH_SQLITE_BACKUP_PATH` to the path printed by the backup command, or to the verified backup location. This replaces the configured SQLite database with the backup contents:
 
 ```bash
 : "${SAFEPATH_SQLITE_BACKUP_PATH:?Set the path to the verified SQLite backup}"
-python - <<'PY'
+DATABASE_URL= DJANGO_DEBUG=True python manage.py shell <<'PY'
 import os
 import sqlite3
 from pathlib import Path
 
-source_path = Path(os.environ["SAFEPATH_SQLITE_BACKUP_PATH"])
-target_path = Path(os.environ.get("SAFEPATH_DATABASE_PATH") or "db.sqlite3")
+from django.conf import settings
+
+database = settings.DATABASES["default"]
+if database["ENGINE"] != "django.db.backends.sqlite3":
+    raise SystemExit("The active application database is not SQLite.")
+
+source_path = Path(os.environ["SAFEPATH_SQLITE_BACKUP_PATH"]).expanduser().resolve()
+target_path = Path(database["NAME"])
 if not source_path.is_file():
     raise SystemExit(f"SQLite backup does not exist: {source_path}")
 
@@ -255,7 +271,13 @@ source.close()
 PY
 ```
 
-After restoring, run `python manage.py migrate --check`, start one instance, and verify `/health/ready/`.
+After restoring, validate the SQLite database rather than an inherited PostgreSQL URL:
+
+```bash
+DATABASE_URL= DJANGO_DEBUG=True python manage.py migrate --check
+```
+
+Then start one instance and verify `/health/ready/`.
 
 ## Road data provider
 
@@ -386,29 +408,46 @@ python manage.py collectstatic --noinput --ignore "web/css/src/*"
 
 The committed Tailwind stylesheet and vendored Leaflet files are the static source. No Node build is required during a Render deploy.
 
-The Free start command applies migrations and then starts Gunicorn:
+The Free start command validates production configuration, applies migrations, and then starts Gunicorn:
 
 ```bash
-python manage.py migrate --noinput
+python scripts/check_production.py &&
+python manage.py migrate --noinput &&
 gunicorn safepath_backend.wsgi:application --config gunicorn.conf.py \
   --bind "0.0.0.0:${PORT:-10000}" --workers 1 --timeout 60 \
   --graceful-timeout 30
 ```
 
-Free services cannot run `preDeployCommand`. Startup migrations are therefore acceptable only for this single-instance demo. Do not scale the service until migrations move to a paid plan's pre-deploy command or an equivalent single migration job. Moving to a paid plan requires changing the plan, adding `preDeployCommand: python manage.py migrate --noinput`, and removing `python manage.py migrate --noinput` from `startCommand`.
+The production check fails startup when PostgreSQL, TLS, provider approval, or another required deployment value is missing. Free services cannot run `preDeployCommand`. Startup migrations are therefore acceptable only for this single-instance demo. Do not scale the service until migrations move to a paid plan's pre-deploy command or an equivalent single migration job. Moving to a paid plan requires changing the plan, adding `preDeployCommand: python manage.py migrate --noinput`, and removing `python manage.py migrate --noinput` from `startCommand` while retaining the production check before Gunicorn starts.
 
 Keep the service at one instance while using public Nominatim. Its file-based pacing lock coordinates workers inside one instance but not separate Render instances. Use an approved geocoder or external shared coordination before scaling.
 
 ### Blueprint validation
 
-Validate the file against the current schema before deployment:
+Required CI validates the Blueprint against the checked-in schema snapshot, so a Render outage or upstream schema change cannot block unrelated pull requests:
 
 ```bash
 pip install --requirement requirements-dev.txt
+python scripts/validate_render.py render.yaml --schema schemas/render.schema.json
+```
+
+Before deployment, also validate against Render's current live schema:
+
+```bash
 python scripts/validate_render.py render.yaml
 ```
 
-The command fetches `https://render.com/schema/render.yaml.json`, validates every supported field, and fails on an unsupported or malformed Blueprint. The repository also contains a deterministic configuration test.
+The live command fetches `https://render.com/schema/render.yaml.json`. The scheduled weekly workflow and manual workflow dispatch run this check. The checked-in snapshot was retrieved on 2026-11-19 and has SHA-256 `6c6721a602ef6d368d5c9384c473cefaae99980e43dd4b1adcf8a2f258fc54f4`. Refresh it and review the diff when Render changes the schema:
+
+```bash
+set -euo pipefail
+curl --fail --silent --show-error --location --max-time 30 \
+  https://render.com/schema/render.yaml.json \
+  --output schemas/render.schema.json
+python scripts/validate_render.py render.yaml --schema schemas/render.schema.json
+```
+
+The repository also contains a deterministic Blueprint configuration test.
 
 ### Troubleshooting
 
@@ -424,6 +463,7 @@ The command fetches `https://render.com/schema/render.yaml.json`, validates ever
 Run this procedure manually after deployment. It is not part of ordinary CI because the geocoding and route checks call external providers.
 
 ```bash
+set -eu
 BASE_URL='https://YOUR-HOSTNAME'
 
 curl --fail-with-body --silent --show-error "$BASE_URL/health/"
@@ -431,8 +471,36 @@ curl --fail-with-body --silent --show-error "$BASE_URL/health/ready/"
 curl --fail-with-body --silent --show-error "$BASE_URL/api/safety-heatmap/"
 curl --fail-with-body --silent --show-error \
   "$BASE_URL/api/geocode/?q=Connaught%20Place%20Delhi"
-curl --fail-with-body --silent --show-error \
-  "$BASE_URL/api/routes/?start_lat=28.4748&start_lon=77.4764&end_lat=28.48&end_lon=77.482"
+
+route_status="$(
+  curl --silent --show-error \
+    --output /tmp/safepath-route-response.json \
+    --write-out '%{http_code}' \
+    "$BASE_URL/api/routes/?start_lat=28.4748&start_lon=77.4764&end_lat=28.48&end_lon=77.482"
+)"
+python - "$route_status" /tmp/safepath-route-response.json <<'PY'
+import json
+import sys
+from pathlib import Path
+
+status = int(sys.argv[1])
+payload = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+if 200 <= status < 300:
+    routes = payload.get("routes")
+    assert isinstance(routes, list), payload
+    assert routes, payload
+    assert payload.get("route_count") == len(routes), payload
+else:
+    expected_codes = {
+        "route_not_found",
+        "road_provider_unavailable",
+        "search_limit_exceeded",
+        "rate_limit_exceeded",
+    }
+    assert status in {404, 429, 503}, (status, payload)
+    assert payload.get("code") in expected_codes, payload
+assert "traceback" not in json.dumps(payload).lower(), payload
+PY
 
 asset_path="$(
   curl --fail --silent --show-error "$BASE_URL/" \
@@ -443,7 +511,9 @@ test -n "$asset_path"
 curl --fail-with-body --silent --show-error "$BASE_URL$asset_path" --output /dev/null
 ```
 
-The health checks must return `{"status":"ok"}` and `{"status":"ready"}`. The heatmap and geocoder responses must be valid JSON. The route response must contain a route or a documented controlled error code, never a traceback. Inspect Render logs for provider failures, readiness errors, and `internal_error` events. Repeat the test after a cold start to confirm that the external database persists while local cache files are recreated.
+The health checks must return `{"status":"ok"}` and `{"status":"ready"}`. The heatmap and geocoder responses must be valid JSON. A successful route response must contain at least one route. A controlled HTTP 404, 429, or 503 response is accepted only for the documented route error codes checked above; `internal_error` and tracebacks fail the smoke test. Inspect Render logs for provider failures, readiness errors, and `internal_error` events.
+
+Repeat the test after a cold start to confirm that the service and readiness check recover while the external database remains reachable. This procedure does not prove row-level database persistence and does not inspect whether local cache files were recreated. Verify persistence separately through the database provider's backup and restore procedure, and inspect the filesystem directly if cache recreation must be verified.
 
 ## Docker
 

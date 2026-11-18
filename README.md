@@ -112,7 +112,7 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `DJANGO_SECURE_HSTS_SECONDS` | `0` | HSTS lifetime in seconds; keep disabled until the deployed hostname and HTTPS redirect path are verified |
 | `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | `False` | Include subdomains in HSTS after verifying every subdomain supports HTTPS |
 | `DJANGO_SECURE_HSTS_PRELOAD` | `False` | Submit the domain to browser preload lists only after explicit review |
-| `DATABASE_URL` | unset | PostgreSQL connection URL with production TLS; unset uses local SQLite |
+| `DATABASE_URL` | unset | PostgreSQL connection URL with production TLS; unset uses local SQLite, while Render startup rejects it |
 | `SAFEPATH_DATABASE_CONN_MAX_AGE` | `60` | PostgreSQL connection lifetime in seconds |
 | `PORT` | `8000` | Container port used by Gunicorn |
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker count |
@@ -304,7 +304,7 @@ The Playwright suite uses deterministic mocked geocode, route, heatmap, and tile
 
 Current local result:
 
-- 190 Django tests passed
+- 192 Django tests passed
 - 14 Playwright tests passed across desktop and mobile Chromium
 - Ruff lint and format checks passed
 - Mypy passed
@@ -314,9 +314,9 @@ Current local result:
 - npm production dependency audit (`npm audit --omit=dev`) reported zero vulnerabilities
 - full npm dependency audit reported zero vulnerabilities
 
-An earlier audit reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The underlying advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. SAFE PATH never accepts user-controlled glob patterns, and the current full npm audit reports zero vulnerabilities. CI requires both npm audit commands to remain clean.
+An earlier audit reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The `picomatch` advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. No patched upstream `picomatch` release was available during this review, and withdrawn advisories are no longer returned by `npm audit`. SAFE PATH never accepts user-controlled glob patterns, `picomatch` is development-only, and the current audits report zero findings without proving that withdrawn advisory was fixed. CI keeps both audit commands enabled and requires the production dependency tree to remain free of `picomatch`.
 
-GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. A fresh Podman image build and runtime passed locally. The native Docker daemon was unavailable in the delivery environment, so native Docker and remote CI remain required evidence.
+GitHub Actions runs the same Python, frontend, and browser gates, then builds the Docker image, waits for its own health check, and verifies local static assets. Required Blueprint validation uses a checked-in Render schema snapshot; a weekly and manually dispatched job checks Render's live schema. A fresh Podman image build and runtime passed locally. The native Docker daemon was unavailable in the delivery environment, so native Docker and remote CI remain required evidence.
 
 ## Project map
 
@@ -343,6 +343,8 @@ docs/
   EXTERNAL_SERVICES.md        Operator service, credential, and attribution checklist
   DEPLOYMENT.md               Deployment, operations, backup, and recovery guide
   DEPLOYMENT_READINESS.md     Verified checks, acceptance status, and blockers
+schemas/
+  render.schema.json          Checked-in Render Blueprint schema snapshot
 ```
 
 ## Historical delivery phases

@@ -29,7 +29,7 @@ def load_schema(source):
 def validate(blueprint, schema):
     errors = sorted(
         Draft202012Validator(schema).iter_errors(blueprint),
-        key=lambda error: list(error.absolute_path),
+        key=lambda error: [str(part) for part in error.absolute_path],
     )
     if not errors:
         return 0

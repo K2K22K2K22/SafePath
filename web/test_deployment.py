@@ -162,6 +162,36 @@ class ProductionCheckTests(SimpleTestCase):
                 self.assertIn("placeholder", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
+    def test_requires_production_postgresql_database(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "SAFEPATH_CARTO_API_KEY": VALID_CARTO_KEY,
+                "SAFEPATH_OSM_API_URL": (
+                    "https://road-provider.internal/api/interpreter"
+                ),
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "road-provider.internal",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "road-provider.internal",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("must configure PostgreSQL", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_accepts_explicitly_approved_private_road_data_provider(self):
         environment = os.environ.copy()
         environment.update(

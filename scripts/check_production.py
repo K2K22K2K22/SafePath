@@ -41,6 +41,22 @@ def main():
         print(f"Production configuration error: {error}", file=sys.stderr)
         return 2
 
+    database = settings.DATABASES["default"]
+    if database.get("ENGINE") != "django.db.backends.postgresql":
+        print(
+            "Production configuration error: DATABASE_URL must configure PostgreSQL.",
+            file=sys.stderr,
+        )
+        return 2
+    sslmode = database.get("OPTIONS", {}).get("sslmode")
+    if sslmode not in {"require", "verify-ca", "verify-full"}:
+        print(
+            "Production configuration error: PostgreSQL must use sslmode=require, "
+            "verify-ca, or verify-full.",
+            file=sys.stderr,
+        )
+        return 2
+
     issues = run_checks(include_deployment_checks=True)
     unexpected = [issue for issue in issues if issue.id not in ALLOWED_HSTS_WARNINGS]
     if unexpected:

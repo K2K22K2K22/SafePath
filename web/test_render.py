@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import yaml
 from django.conf import settings
 from django.test import SimpleTestCase
+from jsonschema import Draft202012Validator
 
 
 class RenderBlueprintTests(SimpleTestCase):
@@ -32,7 +34,12 @@ class RenderBlueprintTests(SimpleTestCase):
         self.assertIn("pip install --requirement requirements.txt", build_command)
         self.assertIn("python manage.py collectstatic", build_command)
         self.assertIn('--ignore "web/css/src/*"', build_command)
+        self.assertIn("python scripts/check_production.py", start_command)
         self.assertIn("python manage.py migrate --noinput", start_command)
+        self.assertLess(
+            start_command.index("python scripts/check_production.py"),
+            start_command.index("python manage.py migrate --noinput"),
+        )
         self.assertIn("gunicorn safepath_backend.wsgi:application", start_command)
         self.assertIn('--bind "0.0.0.0:${PORT:-10000}"', start_command)
         self.assertIn("--workers 1", start_command)
@@ -58,6 +65,22 @@ class RenderBlueprintTests(SimpleTestCase):
             with self.subTest(key=key):
                 self.assertTrue(environment[key]["sync"] is False)
                 self.assertNotIn("value", environment[key])
+
+    def test_matches_checked_in_render_schema(self):
+        schema_path = Path(settings.BASE_DIR) / "schemas/render.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        errors = sorted(
+            Draft202012Validator(schema).iter_errors(self.blueprint),
+            key=lambda error: [str(part) for part in error.absolute_path],
+        )
+
+        self.assertFalse(
+            errors,
+            "\n".join(
+                f"{'.'.join(str(part) for part in error.absolute_path)}: {error.message}"
+                for error in errors
+            ),
+        )
 
     def test_python_version_matches_the_tested_runtime(self):
         version = (Path(settings.BASE_DIR) / ".python-version").read_text(

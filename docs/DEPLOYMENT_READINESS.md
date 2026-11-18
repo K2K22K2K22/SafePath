@@ -114,7 +114,7 @@ The Phase 8 local matrix passed 182 Django tests on SQLite and PostgreSQL, Pytho
 
 ## Phase 9 Render deployment configuration
 
-The repository now contains `.python-version`, a native Python `render.yaml`, a current-schema validator, and a deterministic Blueprint test. The Blueprint configures one Free web service in Singapore with one Gunicorn worker, a 40 second shutdown allowance, `/health/` health checks, a generated Django secret, and no secret values in the repository. It uses startup migrations because Render Free services cannot run a pre-deploy command, and it intentionally does not create Render Free PostgreSQL because that database expires after 30 days.
+The repository now contains `.python-version`, a native Python `render.yaml`, a current-schema validator, a checked-in Render schema snapshot retrieved on 2026-11-19, and deterministic Blueprint tests. The Blueprint configures one Free web service in Singapore with one Gunicorn worker, a 40 second shutdown allowance, `/health/` health checks, a generated Django secret, and no secret values in the repository. Its startup command runs the production configuration gate before migrations and Gunicorn. It uses startup migrations because Render Free services cannot run a pre-deploy command, and it intentionally does not create Render Free PostgreSQL because that database expires after 30 days. Required CI validates against the checked-in snapshot, while a weekly and manually dispatched job validates against Render's live schema so provider availability does not block unrelated pull requests.
 
 `CSRF_TRUSTED_ORIGINS` is now the documented environment variable. `DJANGO_CSRF_TRUSTED_ORIGINS` remains accepted as a legacy alias. The deployment guide covers exact Neon, CARTO, road-provider, host, and origin values, Blueprint creation, migration behavior, Free-plan constraints, validation, and troubleshooting. No Render or Neon resource was created and no public deployment was attempted.
 
@@ -124,7 +124,7 @@ The Phase 9 local matrix passed 188 Django tests, Python lint, format, type, and
 
 The first production Python audit found 88 known vulnerabilities across eight outdated pins. Django was upgraded from 5.2.8 to 5.2.17, Django REST Framework from 3.16.1 to 3.18.2, and the affected `certifi`, `idna`, `python-dotenv`, `requests`, `sqlparse`, and `urllib3` pins were upgraded to their fixed releases. `pip-audit -r requirements.txt` then reported no known vulnerabilities. The updated dependencies passed all 190 Django tests on SQLite and PostgreSQL 16, plus Django checks, Ruff, Mypy, compilation, and the Render Blueprint validation.
 
-`npm audit --omit=dev` reports zero vulnerabilities. An earlier full frontend audit reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The underlying advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. SAFE PATH never accepts user-controlled glob patterns, and the current full npm audit reports zero vulnerabilities. CI requires both npm audit commands to remain clean.
+`npm audit --omit=dev` reports zero vulnerabilities. An earlier full frontend audit reported two high-severity development-tool findings through Tailwind's transitive `@parcel/watcher` and `picomatch` packages. The `picomatch` advisory, `GHSA-fc5q-39xc-vjpf`, was withdrawn on 2026-11-18 after the upstream maintainer determined that the reported regular-expression denial of service requires attacker-controlled glob patterns. No patched upstream `picomatch` release was available during this review, and withdrawn advisories are no longer returned by `npm audit`. SAFE PATH never accepts user-controlled glob patterns, `picomatch` is development-only, and the current audits report zero findings without proving that withdrawn advisory was fixed. CI keeps both audit commands enabled and separately requires `picomatch` to remain absent from the production dependency tree.
 
 Provider behavior remains covered by deterministic mocked upstream tests. Ordinary CI does not call public OSM or Nominatim services. Native Docker, remote CI, and live Render behavior remain unverified because the repository was not pushed and no public resource was created.
 
@@ -138,6 +138,8 @@ The documentation does not claim that a Render service, Neon database, CARTO acc
 
 A follow-up literal runbook review found and corrected several documentation defects: the production commands no longer use a rejected CARTO placeholder, the restored database is passed explicitly to `migrate --check`, the provider check states its inherited secret requirements, SQLite backup and restore honor `SAFEPATH_DATABASE_PATH`, route persistence is described accurately, and static-asset and mocked-provider checks include runnable commands. The production checks, production static collection, custom-path SQLite backup and restore, restored-database migration check, and 53 mocked provider tests were rerun successfully. The production check used an existing non-placeholder CI test value only to verify command execution; it does not establish CARTO ownership or provider connectivity.
 
+A later CI and runbook review tightened the deployment gate so production requires PostgreSQL with an accepted TLS mode, made SQLite backup and restore use Django's resolved database path, and limited live route smoke acceptance to successful routes or documented controlled provider errors. Required Blueprint validation now uses a checked-in Render schema snapshot, while a weekly and manually dispatched job checks the live schema. The checked-in and live schemas both validated the Blueprint. The strict production check passed with a PostgreSQL TLS configuration and rejected a missing `DATABASE_URL`; the custom-path SQLite backup, restore, and backend checks passed; the controlled route-error smoke validation passed; and the native Gunicorn diagnostic smoke passed. These checks do not establish a Render service, a live database, provider connectivity, or public deployment.
+
 ## Phase 12 final acceptance
 
 | Requirement | Executed evidence | Status |
@@ -145,7 +147,7 @@ A follow-up literal runbook review found and corrected several documentation def
 | Production web runtime | Gunicorn configuration check, native Gunicorn smoke test, and Podman container runtime | Passed locally |
 | Docker no longer uses `runserver` | Image build, entrypoint inspection, and Gunicorn process inspection | Passed with Podman |
 | Static asset collection and delivery | Production `collectstatic`, manifest verification, rendered URLs, CSS references, content types, and gzip checks | Passed locally |
-| PostgreSQL and SQLite | 190 tests on each database, PostgreSQL 16 migrations, and `migrate --check` | Passed locally |
+| PostgreSQL and SQLite | 192 tests on each database, PostgreSQL 16 migrations, and `migrate --check` | Passed locally |
 | Migration procedure | SQLite and PostgreSQL `migrate --noinput`, `migrate --check`, and Render startup command validation | Passed locally |
 | Production secret, debug, host, CSRF, HTTPS, and cookie controls | Django deployment checks, production gate, and deployment regression tests | Passed; only deliberate HSTS warnings remain |
 | External provider controls | Exact host allowlists, production road-provider approval, bounded requests, geocoder pacing and cache, and mocked upstream tests | Passed locally; live approved provider remains required |
@@ -154,11 +156,11 @@ A follow-up literal runbook review found and corrected several documentation def
 | Unknown coverage and safety claims | Coverage union tests, unknown-risk API tests, and browser assertions | Passed |
 | Existing routing, map, heatmap, and theme behavior | Django routing suite and 14 desktop and mobile Playwright tests | Passed |
 | Python and frontend quality gates | Ruff lint and format, Mypy, compilation, Django checks, Tailwind, ESLint, and JavaScript syntax | Passed |
-| Dependency audits | `pip-audit -r requirements.txt`, `npm audit --omit=dev`, and full `npm audit` | Passed with zero known findings |
-| GitHub Actions quality gates | Workflow YAML parse and Actionlint validation, with equivalent local gates executed | Local gates passed; remote run pending because no push was made |
+| Dependency audits | `pip-audit -r requirements.txt`, `npm audit --omit=dev`, and full `npm audit` | Current commands returned zero findings; withdrawn development-only `picomatch` advisory remains documented separately |
+| GitHub Actions quality gates | Workflow YAML parse and Actionlint validation, checked-in Render schema test, and equivalent local gates executed | Local gates passed; remote run pending because no push was made |
 | Docker build and health | Fresh upgraded-dependency Podman image build, migrations, health probe, non-root UID, static manifest, and graceful stop | Passed with Podman; native Docker daemon unavailable |
-| Render configuration | Blueprint validated against `https://render.com/schema/render.yaml.json` on 2026-11-18 | Passed; no Render resource exists |
-| Deployment and operations documentation | Link checks, PostgreSQL 16 dump and restore exercise, SQLite backup exercise, diff check, and em-dash scan | Passed |
+| Render configuration | Blueprint validated against the checked-in schema and `https://render.com/schema/render.yaml.json` on 2026-11-19 | Passed; no Render resource exists |
+| Deployment and operations documentation | Link checks, PostgreSQL 16 dump and restore exercise, custom-path SQLite backup and restore exercise, diff check, and em-dash scan | Passed |
 | Tailwind and reusable components | Tailwind build produced no committed CSS diff and browser regressions passed | Passed |
 
 Repository preparation is complete for operator-managed deployment. Public deployment acceptance remains incomplete until the user creates the external resources, pushes the reviewed commits, runs GitHub Actions, applies the Blueprint, and performs the documented live smoke test.

@@ -13,9 +13,10 @@ services:
       pip install --requirement requirements.txt && python manage.py collectstatic
       --noinput --ignore "web/css/src/*"
     startCommand: >-
-      python manage.py migrate --noinput && gunicorn safepath_backend.wsgi:application
-      --config gunicorn.conf.py --bind "0.0.0.0:${PORT:-10000}" --workers 1
-      --timeout 60 --graceful-timeout 30
+      python scripts/check_production.py && python manage.py migrate --noinput &&
+      gunicorn safepath_backend.wsgi:application --config gunicorn.conf.py
+      --bind "0.0.0.0:${PORT:-10000}" --workers 1 --timeout 60
+      --graceful-timeout 30
     envVars:
       - key: DJANGO_DEBUG
         value: "False"
