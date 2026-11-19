@@ -6,7 +6,7 @@ This guide records the services SAFE PATH depends on, operator responsibilities,
 
 | Service | Used by | Configuration | Production requirement |
 | --- | --- | --- | --- |
-| Overpass-compatible road provider | Server | `SAFEPATH_OSM_API_URL`, `SAFEPATH_OSM_API_ALLOWED_HOSTS`, `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Paid or self-hosted HTTPS service with explicit host approval |
+| Overpass-compatible road provider (selected: Overpass.ch) | Server | `SAFEPATH_OSM_API_URL`, `SAFEPATH_OSM_API_KEY`, `SAFEPATH_OSM_API_ALLOWED_HOSTS`, `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Paid or self-hosted HTTPS service with explicit host approval and API key |
 | Nominatim-compatible geocoder | Server | `SAFEPATH_GEOCODER_URL`, `SAFEPATH_GEOCODER_ALLOWED_HOSTS` | Service whose policy permits the expected traffic; public Nominatim has no availability guarantee |
 | OpenStreetMap raster tiles | Browser | Fixed canonical endpoint | Use only when the tile policy permits the expected traffic |
 | CARTO raster tiles | Browser | `SAFEPATH_CARTO_API_KEY` | Customer-owned publishable key restricted to the deployed domain |
@@ -19,7 +19,7 @@ SAFE PATH does not send bundled incident records to external services. A route r
 
 - Store `DJANGO_SECRET_KEY` and `DATABASE_URL` only in a secret manager or ignored local environment file.
 - `SAFEPATH_CARTO_API_KEY` is a publishable browser value, not a server secret. Restrict it to the deployed domain and keep it visible only in the intended tile requests.
-- Road and geocoder URLs cannot contain embedded credentials. The current provider interface has no per-request authentication-token setting. Select a service that permits the approved server connection without credentials in the URL, or place an appropriately secured provider gateway in front of it.
+- Road and geocoder URLs cannot contain embedded credentials. Overpass.ch authenticates with `SAFEPATH_OSM_API_KEY` in an `X-API-Key` request header. Store the key only in a secret manager or the platform's secret setting. It is never placed in the endpoint URL, request body, logs, exception text, or HTTP responses.
 - Never place credentials in `render.yaml`, `.env.example`, committed documentation, shell history, CI logs, or provider URLs.
 - Application and Gunicorn logs omit query strings and redact credential-like values. Provider response bodies and exception text are not returned to users.
 
@@ -29,7 +29,7 @@ The route loader uses an Overpass-compatible read-only endpoint. It does not use
 
 A production deployment must use a paid or self-hosted provider and record its exact host in both allowlists. The application rejects known public Overpass hosts in production even if they are listed. Listing a non-public host is an operator assertion that the service contract, licensing, and capacity are suitable; the application cannot verify them.
 
-Provider requests use fixed bounded Overpass QL, HTTPS, no redirects, finite timeouts, byte and element limits, and per-process serialization. Multiple instances need provider-side capacity or shared coordination. Review the [Overpass API commons guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) before changing traffic patterns.
+The selected provider is Overpass.ch at `https://api.overpass.ch/v1/interpreter`, with host `api.overpass.ch` in both allowlists. Requests use a form-encoded `data` POST carrying fixed bounded Overpass QL, request XML output through `[out:xml]`, and authenticate with the `X-API-Key` header. HTTPS, no redirects, finite timeouts, byte and element limits, per-process serialization, and an application-wide cap of 60 interpreter requests per rolling minute are enforced. Provider requests stay at one concurrency in the supported one-worker Render configuration, within the Overpass.ch Small plan limit of two concurrent queries. Graph caching prevents repeated downloads. Multiple instances need provider-side capacity or shared coordination. Review the [Overpass API commons guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) before changing traffic patterns.
 
 ## Geocoding policy
 

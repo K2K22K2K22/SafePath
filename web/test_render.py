@@ -58,6 +58,7 @@ class RenderBlueprintTests(SimpleTestCase):
             "CSRF_TRUSTED_ORIGINS",
             "DATABASE_URL",
             "SAFEPATH_CARTO_API_KEY",
+            "SAFEPATH_OSM_API_KEY",
             "SAFEPATH_OSM_API_URL",
             "SAFEPATH_OSM_API_ALLOWED_HOSTS",
             "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS",

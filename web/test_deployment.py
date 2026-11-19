@@ -164,6 +164,36 @@ class ProductionCheckTests(SimpleTestCase):
                 self.assertIn("placeholder", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
+    def test_requires_api_key_for_overpass_ch(self):
+        environment = os.environ.copy()
+        environment.pop("DATABASE_URL", None)
+        environment.pop("SAFEPATH_OSM_API_KEY", None)
+        environment.update(
+            {
+                "DJANGO_DEBUG": "False",
+                "DJANGO_SECRET_KEY": VALID_SECRET,
+                "DJANGO_ALLOWED_HOSTS": "safepath.example.com",
+                "DJANGO_TRUST_X_FORWARDED_PROTO": "True",
+                "SAFEPATH_CARTO_API_KEY": VALID_CARTO_KEY,
+                "SAFEPATH_OSM_API_URL": "https://api.overpass.ch/v1/interpreter",
+                "SAFEPATH_OSM_API_ALLOWED_HOSTS": "api.overpass.ch",
+                "SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS": "api.overpass.ch",
+            }
+        )
+        script = Path(settings.BASE_DIR) / "scripts" / "check_production.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("SAFEPATH_OSM_API_KEY", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_requires_production_postgresql_database(self):
         environment = os.environ.copy()
         environment["DATABASE_URL"] = ""

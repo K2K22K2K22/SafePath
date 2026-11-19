@@ -25,7 +25,12 @@ def main():
         return 2
     from django.conf import settings
 
-    from Model.utils.osm_graph import RoadDataUnavailable, _validated_osm_url
+    from Model.utils.osm_graph import (
+        OVERPASS_CH_HOST,
+        RoadDataUnavailable,
+        _prepared_hostname,
+        _validated_osm_url,
+    )
 
     if not settings.SAFEPATH_CARTO_API_KEY:
         print(
@@ -39,6 +44,17 @@ def main():
         _validated_osm_url(require_private=True)
     except RoadDataUnavailable as error:
         print(f"Production configuration error: {error}", file=sys.stderr)
+        return 2
+
+    if (
+        _prepared_hostname(settings.SAFEPATH_OSM_API_URL) == OVERPASS_CH_HOST
+        and not settings.SAFEPATH_OSM_API_KEY
+    ):
+        print(
+            "Production configuration error: SAFEPATH_OSM_API_KEY must be set "
+            "for Overpass.ch.",
+            file=sys.stderr,
+        )
         return 2
 
     database = settings.DATABASES["default"]

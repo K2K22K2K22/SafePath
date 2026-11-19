@@ -50,7 +50,8 @@ Open <http://127.0.0.1:8000>. The public Overpass endpoint in `.env.example` is 
 | `DJANGO_TRUST_X_FORWARDED_PROTO` | `True` only behind a proxy that replaces forwarded headers | Render uses `True`; keep `False` for direct local containers |
 | `DATABASE_URL` | PostgreSQL URL with `sslmode=require`, `verify-ca`, or `verify-full` | Secret manager; use a direct URL for migrations |
 | `SAFEPATH_CARTO_API_KEY` | Customer-owned publishable key restricted to the deployed domain | Browser-visible value, not a server secret |
-| `SAFEPATH_OSM_API_URL` | HTTPS endpoint of the approved paid or self-hosted road provider | No URL credentials |
+| `SAFEPATH_OSM_API_URL` | `https://api.overpass.ch/v1/interpreter` for the selected provider | No URL credentials |
+| `SAFEPATH_OSM_API_KEY` | Operator-provided Overpass.ch API key | Secret manager; sent as `X-API-Key`, never in URLs or logs |
 | `SAFEPATH_OSM_API_ALLOWED_HOSTS` | Exact host from `SAFEPATH_OSM_API_URL` | Exact host allowlist |
 | `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Same approved provider host | Explicit production assertion |
 | `PORT` | Platform-assigned port | Gunicorn bind port |
@@ -111,6 +112,7 @@ Run the production checks with the same environment used by the deployment. The 
 : "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
 : "${DATABASE_URL:?Export the production PostgreSQL URL}"
 : "${DJANGO_TRUST_X_FORWARDED_PROTO:?Export True behind the trusted TLS proxy}"
+: "${SAFEPATH_OSM_API_KEY:?Export the Overpass.ch API key}"
 : "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
 : "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
 : "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
@@ -120,6 +122,7 @@ export SAFEPATH_CARTO_API_KEY
 export DJANGO_ALLOWED_HOSTS
 export DATABASE_URL
 export DJANGO_TRUST_X_FORWARDED_PROTO
+export SAFEPATH_OSM_API_KEY
 export SAFEPATH_OSM_API_URL
 export SAFEPATH_OSM_API_ALLOWED_HOSTS
 export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
@@ -283,19 +286,20 @@ Then start one instance and verify `/health/ready/`.
 
 ## Road data provider
 
-The route loader uses an Overpass-compatible read-only endpoint. Configure all three values:
+The route loader uses an Overpass-compatible read-only endpoint. The selected provider is Overpass.ch on its Small plan. Configure all four values:
 
 ```bash
-SAFEPATH_OSM_API_URL='https://road-provider.example/api/interpreter'
-SAFEPATH_OSM_API_ALLOWED_HOSTS='road-provider.example'
-SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
+SAFEPATH_OSM_API_URL='https://api.overpass.ch/v1/interpreter'
+SAFEPATH_OSM_API_KEY='operator-provided-api-key'
+SAFEPATH_OSM_API_ALLOWED_HOSTS='api.overpass.ch'
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='api.overpass.ch'
 ```
 
-These are reserved example values. Replace them with the operator's approved provider URL and exact host.
+Keep the key in a secret manager. It is sent in the `X-API-Key` header of a form-encoded POST carrying XML-output Overpass QL, and never appears in the URL, logs, exception text, or responses. The production gate rejects a missing key when `api.overpass.ch` is selected.
 
 The public `overpass-api.de` endpoint is a development fallback only. It has no availability guarantee and must not be used as the production road-data backend. Production requests require the provider host to appear in the explicit production approval list and reject known public Overpass hosts. `scripts/check_production.py` enforces the same requirement. The URL must use HTTPS, the host must appear in the exact allowlist, redirects are rejected, and URL credentials and non-standard ports are rejected. Listing a production host asserts that the operator has a paid or self-hosted agreement for it.
 
-Each request uses fixed bounded Overpass QL. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, aggregate XML elements, graph edges, and the acquisition deadline checked between response reads. Provider requests are serialized within one process, and graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
+Each request uses fixed bounded Overpass QL with XML output. The loader limits provider requests, downloaded bytes, bounding-box area, split depth, XML depth, aggregate XML elements, graph edges, and the acquisition deadline checked between response reads. Provider requests are serialized within one process and capped at 60 interpreter requests per rolling minute, including split bounding boxes. The supported one-worker Render configuration stays within the Overpass.ch Small plan limit of two concurrent queries and 60 requests per minute. Graphs are cached in process. See [DATA_PROVIDERS.md](DATA_PROVIDERS.md) for exact limits, licensing, attribution, and multi-instance constraints.
 
 ## Geocoding and map tiles
 
@@ -348,6 +352,7 @@ Prepare these values before creating the Blueprint:
 | `CSRF_TRUSTED_ORIGINS` | Exact `https://` origin for the same hostname |
 | `DATABASE_URL` | PostgreSQL URL for the demo database with `sslmode=require`, `verify-ca`, or `verify-full` |
 | `SAFEPATH_CARTO_API_KEY` | Customer-owned, domain-restricted CARTO publishable key |
+| `SAFEPATH_OSM_API_KEY` | Operator-provided Overpass.ch API key, entered as a Render secret |
 | `SAFEPATH_OSM_API_URL` | HTTPS endpoint of the approved paid or self-hosted Overpass-compatible provider |
 | `SAFEPATH_OSM_API_ALLOWED_HOSTS` | Exact host from `SAFEPATH_OSM_API_URL` |
 | `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | Same exact provider host, explicitly approved for production |

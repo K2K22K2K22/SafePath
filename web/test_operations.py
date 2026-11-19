@@ -278,6 +278,16 @@ class OperationsLoggingTests(SimpleTestCase):
         self.assertNotIn("New York NY", message)
         self.assertIn("[redacted]", message)
 
+    def test_log_formatter_redacts_road_provider_api_key(self):
+        from safepath_backend.logging import redact_query_values
+
+        message = redact_query_values(
+            "SAFEPATH_OSM_API_KEY=overpass-secret X-API-Key: overpass-secret"
+        )
+
+        self.assertNotIn("overpass-secret", message)
+        self.assertIn("[redacted]", message)
+
     def test_log_formatter_redacts_exception_text(self):
         from safepath_backend.logging import SafeLogFormatter
 

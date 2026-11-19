@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
@@ -407,7 +408,7 @@ class OSMGraphTests(SimpleTestCase):
         self.assertIn(">;", query)
         self.assertIn("out body;", query)
 
-    def test_provider_request_uses_overpass_query(self):
+    def test_provider_request_posts_overpass_query_as_xml(self):
         response = MagicMock()
         response.status_code = 200
         response.headers = {}
@@ -416,15 +417,20 @@ class OSMGraphTests(SimpleTestCase):
         response.__enter__.return_value = response
 
         with patch(
-            "Model.utils.osm_graph.requests.get",
+            "Model.utils.osm_graph.requests.post",
             return_value=response,
-        ) as get:
+        ) as post:
             _fetch_osm_xml((77.475, 28.474, 77.477, 28.476))
 
-        params = get.call_args.kwargs["params"]
-        self.assertEqual(set(params), {"data"})
-        self.assertIn('way["highway"~', params["data"])
-        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertEqual(
+            post.call_args.args[0], "https://road-provider.internal/api/interpreter"
+        )
+        form = post.call_args.kwargs["data"]
+        self.assertEqual(set(form), {"data"})
+        self.assertIn("[out:xml]", form["data"])
+        self.assertIn('way["highway"~', form["data"])
+        self.assertEqual(post.call_args.kwargs["headers"]["Accept"], "application/xml")
+        self.assertFalse(post.call_args.kwargs["allow_redirects"])
 
     def test_provider_requests_are_serialized(self):
         active_requests = 0
@@ -449,7 +455,7 @@ class OSMGraphTests(SimpleTestCase):
             return response
 
         with patch(
-            "Model.utils.osm_graph.requests.get",
+            "Model.utils.osm_graph.requests.post",
             side_effect=provider_response,
         ):
             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -484,7 +490,7 @@ class OSMGraphTests(SimpleTestCase):
             return response
 
         with patch(
-            "Model.utils.osm_graph.requests.get",
+            "Model.utils.osm_graph.requests.post",
             side_effect=provider_response,
         ) as get:
             documents = _fetch_osm_xml((77.475, 28.474, 77.477, 28.476))
@@ -501,7 +507,7 @@ class OSMGraphTests(SimpleTestCase):
         response.__enter__.return_value = response
 
         with (
-            patch("Model.utils.osm_graph.requests.get", return_value=response) as get,
+            patch("Model.utils.osm_graph.requests.post", return_value=response) as get,
             self.assertRaises(RoadDataUnavailable),
         ):
             _fetch_osm_xml((77.475, 28.474, 77.477, 28.476))
@@ -517,7 +523,7 @@ class OSMGraphTests(SimpleTestCase):
         response.__enter__.return_value = response
 
         with (
-            patch("Model.utils.osm_graph.requests.get", return_value=response),
+            patch("Model.utils.osm_graph.requests.post", return_value=response),
             override_settings(SAFEPATH_OSM_API_MAX_BYTES=50),
             self.assertRaises(RoadDataUnavailable),
         ):
@@ -529,10 +535,73 @@ class OSMGraphTests(SimpleTestCase):
         response.__enter__.return_value = response
 
         with (
-            patch("Model.utils.osm_graph.requests.get", return_value=response) as get,
+            patch("Model.utils.osm_graph.requests.post", return_value=response) as get,
             self.assertRaises(RoadDataUnavailable),
         ):
             _fetch_osm_xml((0.0, 0.0, 0.01, 0.01))
 
         get.assert_called_once()
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
+
+
+@override_settings(
+    SAFEPATH_OSM_API_URL="https://api.overpass.ch/v1/interpreter",
+    SAFEPATH_OSM_API_ALLOWED_HOSTS=("api.overpass.ch",),
+    SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS=("api.overpass.ch",),
+    SAFEPATH_OSM_API_KEY="overpass-test-key",
+)
+class OverpassChAuthenticationTests(SimpleTestCase):
+    bbox = (77.475, 28.474, 77.477, 28.476)
+
+    def provider_response(self):
+        response = MagicMock()
+        response.status_code = 200
+        response.headers = {}
+        response.raise_for_status.return_value = None
+        response.iter_content.return_value = [b"document"]
+        response.__enter__.return_value = response
+        return response
+
+    def test_posts_key_header_and_xml_query_to_expected_endpoint(self):
+        with patch(
+            "Model.utils.osm_graph.requests.post",
+            return_value=self.provider_response(),
+        ) as post:
+            _fetch_osm_xml(self.bbox)
+
+        url = post.call_args.args[0]
+        form = post.call_args.kwargs["data"]
+        headers = post.call_args.kwargs["headers"]
+        self.assertEqual(url, "https://api.overpass.ch/v1/interpreter")
+        self.assertEqual(set(form), {"data"})
+        self.assertIn("[out:xml]", form["data"])
+        self.assertEqual(headers["X-API-Key"], "overpass-test-key")
+        self.assertEqual(headers["Accept"], "application/xml")
+        self.assertNotIn("overpass-test-key", url)
+        self.assertNotIn("overpass-test-key", form["data"])
+
+    @override_settings(SAFEPATH_OSM_API_KEY="")
+    def test_rejects_missing_key_before_any_request(self):
+        with (
+            patch("Model.utils.osm_graph.requests.post") as post,
+            self.assertRaisesRegex(RoadDataUnavailable, "API key"),
+        ):
+            _fetch_osm_xml(self.bbox)
+
+        post.assert_not_called()
+
+    def test_application_wide_request_rate_limit(self):
+        with (
+            patch("Model.utils.osm_graph._REQUEST_TIMESTAMPS", deque()),
+            patch("Model.utils.osm_graph.OSM_API_RATE_LIMIT_REQUESTS", 2),
+            patch(
+                "Model.utils.osm_graph.requests.post",
+                return_value=self.provider_response(),
+            ) as post,
+        ):
+            _fetch_osm_xml(self.bbox)
+            _fetch_osm_xml(self.bbox)
+            with self.assertRaisesRegex(RoadDataUnavailable, "rate limit"):
+                _fetch_osm_xml(self.bbox)
+
+        self.assertEqual(post.call_count, 2)

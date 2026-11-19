@@ -5,7 +5,7 @@ import threading
 import time
 import weakref
 import xml.etree.ElementTree as ET
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from io import BytesIO
 from urllib.parse import urlparse
@@ -83,6 +83,10 @@ OVERPASS_OVERSIZED_ERROR_MARKERS = (
     "too many elements",
 )
 MAX_PROVIDER_ERROR_BYTES = 64 * 1024
+OVERPASS_CH_HOST = "api.overpass.ch"
+# Overpass.ch Small plan: 2 concurrent queries, 60 interpreter requests per minute.
+OSM_API_RATE_LIMIT_REQUESTS = 60
+OSM_API_RATE_LIMIT_WINDOW_SECONDS = 60
 ALLOWED_ACCESS_VALUES = {
     "yes",
     "true",
@@ -110,6 +114,7 @@ _GRAPH_LOAD_LOCKS: weakref.WeakValueDictionary[
 ] = weakref.WeakValueDictionary()
 _GRAPH_LOAD_LOCKS_GUARD = threading.Lock()
 _ROAD_PROVIDER_REQUEST_LOCK = threading.RLock()
+_REQUEST_TIMESTAMPS: deque[float] = deque()
 
 
 class RoadDataUnavailable(RoadProviderUnavailableError):
@@ -151,6 +156,23 @@ class _FetchBudget:
         if self.bytes_read + byte_count > settings.SAFEPATH_OSM_API_MAX_BYTES:
             raise RoadDataUnavailable("Road data response exceeded the allowed size.")
         self.bytes_read += byte_count
+
+
+def _provider_api_key(url):
+    key = settings.SAFEPATH_OSM_API_KEY
+    if _prepared_hostname(url) == OVERPASS_CH_HOST and not key:
+        raise RoadDataUnavailable("Road data provider API key is not configured.")
+    return key
+
+
+def _enforce_rate_limit():
+    now = time.monotonic()
+    window = OSM_API_RATE_LIMIT_WINDOW_SECONDS
+    while _REQUEST_TIMESTAMPS and now - _REQUEST_TIMESTAMPS[0] >= window:
+        _REQUEST_TIMESTAMPS.popleft()
+    if len(_REQUEST_TIMESTAMPS) >= OSM_API_RATE_LIMIT_REQUESTS:
+        raise RoadDataUnavailable("Road data provider rate limit reached.")
+    _REQUEST_TIMESTAMPS.append(now)
 
 
 def load_road_graph(start_lat, start_lon, end_lat, end_lon):
@@ -234,26 +256,33 @@ def _fetch_osm_xml(bbox, budget=None, depth=0):
         return _fetch_split_bbox(bbox, budget, depth + 1)
 
     url = _validated_osm_url()
+    api_key = _provider_api_key(url)
     query = _overpass_query(bbox)
     budget.register_request()
     chunks = []
     split_required = False
 
+    headers = {
+        "Accept": "application/xml",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": settings.SAFEPATH_HTTP_USER_AGENT,
+    }
+    if api_key:
+        headers["X-API-Key"] = api_key
+
     try:
         with _ROAD_PROVIDER_REQUEST_LOCK:
             budget.check_deadline()
+            _enforce_rate_limit()
             remaining = budget.remaining_seconds()
             timeout = (
                 max(min(10.0, remaining), 0.1),
                 max(min(settings.SAFEPATH_ROAD_DATA_TIMEOUT_SECONDS, remaining), 0.1),
             )
-            with requests.get(
+            with requests.post(
                 url,
-                params={"data": query},
-                headers={
-                    "Accept": "application/xml",
-                    "User-Agent": settings.SAFEPATH_HTTP_USER_AGENT,
-                },
+                data={"data": query},
+                headers=headers,
                 timeout=timeout,
                 stream=True,
                 allow_redirects=False,

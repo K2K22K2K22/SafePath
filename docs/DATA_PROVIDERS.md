@@ -8,19 +8,20 @@ The route loader uses an Overpass-compatible read-only endpoint. It sends a fixe
 
 The development fallback is `https://overpass-api.de/api/interpreter`. Public Overpass instances are shared services with no availability guarantee. They are suitable only for low-volume development and testing. Official guidance suggests no more than about 10,000 requests and about 1 GB of downloads per day, and states that applications relying on a public instance as their backend should run their own service. A deployed environment must use a paid or self-hosted Overpass-compatible provider. See the [Overpass API commons guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html).
 
-Configure the provider with an HTTPS URL, an exact host allowlist, and an explicit production approval list:
+The selected provider is Overpass.ch on its Small plan. Configure it with an HTTPS URL, an exact host allowlist, an explicit production approval list, and the operator's secret API key:
 
 ```bash
-SAFEPATH_OSM_API_URL='https://road-provider.example/api/interpreter'
-SAFEPATH_OSM_API_ALLOWED_HOSTS='road-provider.example'
-SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='road-provider.example'
+SAFEPATH_OSM_API_URL='https://api.overpass.ch/v1/interpreter'
+SAFEPATH_OSM_API_KEY='operator-provided-api-key'
+SAFEPATH_OSM_API_ALLOWED_HOSTS='api.overpass.ch'
+SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS='api.overpass.ch'
 ```
 
-These are reserved example values. Replace them with the operator's approved provider URL and exact host.
+Keep the key in a secret manager or the platform secret setting. The application sends it only in the `X-API-Key` header of a form-encoded POST. It is never included in the URL, query string, logs, exception text, or HTTP responses. The key value above is a placeholder, not a credential.
 
 Production mode requires the configured provider host to appear in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`. Known public Overpass hosts remain rejected even when an operator lists one. The denylist was reviewed against the OSM Wiki public-instance list on 18 November 2026 and must be reviewed when that list changes. Host comparisons are canonicalized so case, IDNA form, and a trailing DNS dot cannot bypass either list.
 
-The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command. It also requires the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, trusted-proxy protocol setting, and approved provider values, so export them before running it:
+The production check script applies the same rule even when `DJANGO_DEBUG` is enabled for the surrounding command. It also requires the operator-provided Django secret, customer-owned CARTO key, deployed host, production PostgreSQL URL, trusted-proxy protocol setting, approved provider values, and the Overpass.ch API key when that host is selected, so export them before running it:
 
 ```bash
 : "${DJANGO_SECRET_KEY:?Export the operator-provided Django secret}"
@@ -28,6 +29,7 @@ The production check script applies the same rule even when `DJANGO_DEBUG` is en
 : "${DJANGO_ALLOWED_HOSTS:?Export the exact deployed host list}"
 : "${DATABASE_URL:?Export the production PostgreSQL URL}"
 : "${DJANGO_TRUST_X_FORWARDED_PROTO:?Export True behind the trusted TLS proxy}"
+: "${SAFEPATH_OSM_API_KEY:?Export the Overpass.ch API key}"
 : "${SAFEPATH_OSM_API_URL:?Export the approved provider URL}"
 : "${SAFEPATH_OSM_API_ALLOWED_HOSTS:?Export the approved provider host}"
 : "${SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS:?Export the approved provider host}"
@@ -37,6 +39,7 @@ export SAFEPATH_CARTO_API_KEY
 export DJANGO_ALLOWED_HOSTS
 export DATABASE_URL
 export DJANGO_TRUST_X_FORWARDED_PROTO
+export SAFEPATH_OSM_API_KEY
 export SAFEPATH_OSM_API_URL
 export SAFEPATH_OSM_API_ALLOWED_HOSTS
 export SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS
@@ -52,6 +55,8 @@ The loader preserves these limits for every graph load:
 
 - HTTPS only, exact host allowlist, no URL credentials, and no non-standard port
 - No redirects
+- Form-encoded POST of the QL query with `[out:xml]` output and `X-API-Key` authentication for Overpass.ch
+- At most 60 interpreter requests per rolling minute across the application, including split bounding boxes
 - One fixed Overpass QL query for drivable highway classes with a 25 second server timeout and a 256 MiB server memory declaration
 - Maximum bounding-box area of `0.20` square degrees
 - Maximum 16 provider requests per graph load
@@ -61,7 +66,7 @@ The loader preserves these limits for every graph load:
 - Maximum XML depth of 8 per document and 500,000 XML elements in aggregate across split documents
 - Maximum 250,000 graph edges
 
-Provider requests are serialized within one application process. Each Gunicorn worker has an independent lock, so provider capacity must cover the configured worker count. The process-local graph cache retains up to 8 graphs for 24 hours by default. Multiple application instances require provider-side capacity or shared coordination so their combined requests remain within the provider agreement. The application does not enforce a daily quota because that total cannot be coordinated reliably within one process.
+Provider requests are serialized within one application process, so one worker sends at most one concurrent query. The 60 per minute cap is counted when each interpreter request is sent, including every split bounding-box request, and is enforced inside that same lock. Each Gunicorn worker has an independent counter, so the supported one-worker Render configuration stays within the Overpass.ch Small plan limit of two concurrent queries and 60 requests per minute. The process-local graph cache retains up to 8 graphs for 24 hours by default, so cache hits consume no provider capacity. Multiple application instances need provider-side capacity or shared coordination. The application does not enforce a daily quota because that total cannot be coordinated reliably within one process.
 
 Provider failures, oversized responses, invalid documents, and exhausted limits produce a road-data-unavailable response. A rejected request is split only when the provider explicitly reports an oversized area or element count. Documents must be UTF-8, and DTD or entity declarations are rejected. The application does not silently substitute a different provider or fabricate road geometry.
 

@@ -492,6 +492,9 @@ SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS = tuple(
     ).split(",")
     if host.strip()
 )
+SAFEPATH_OSM_API_KEY = os.environ.get("SAFEPATH_OSM_API_KEY", "").strip()
+if any(character.isspace() for character in SAFEPATH_OSM_API_KEY):
+    raise ImproperlyConfigured("SAFEPATH_OSM_API_KEY must not contain whitespace.")
 SAFEPATH_OSM_API_MAX_AREA = float(os.environ.get("SAFEPATH_OSM_API_MAX_AREA", "0.20"))
 SAFEPATH_OSM_API_MAX_BYTES = int(
     os.environ.get("SAFEPATH_OSM_API_MAX_BYTES", "25000000")

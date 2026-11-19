@@ -271,10 +271,9 @@ jobs:
             --label com.docker.compose.project=safepath-ci \
             --label com.docker.compose.volume=safepath_data \
             safepath-ci_safepath_data
-          image_id="$(docker compose images -q django)"
           docker run --rm --user root \
             --volume safepath-ci_safepath_data:/data \
-            "$image_id" touch /data/legacy-root-owned
+            safepath:local touch /data/legacy-root-owned
           docker compose up --detach
           init_id="$(docker compose ps -aq data-init)"
           test "$(docker inspect --format '{{.Path}}' "$init_id")" = "/bin/sh"

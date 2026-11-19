@@ -55,7 +55,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-For local development, keep `DJANGO_DEBUG=True`. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. Without a CARTO key, local dark mode uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and `SAFEPATH_CARTO_API_KEY` must contain a customer-owned publishable key. Startup fails when any of these requirements is missing, and obvious CARTO placeholders are rejected. Production route requests also require a paid or self-hosted Overpass-compatible provider whose exact host appears in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`.
+For local development, keep `DJANGO_DEBUG=True`. The public Overpass endpoint in `.env.example` is a low-volume development fallback with no availability guarantee. Without a CARTO key, local dark mode uses filtered OpenStreetMap tiles instead of requesting a watermarked CARTO tile. When debug mode is disabled, `DJANGO_SECRET_KEY` must contain at least 50 sufficiently random characters, `DJANGO_ALLOWED_HOSTS` must list exact production host names, and `SAFEPATH_CARTO_API_KEY` must contain a customer-owned publishable key. Startup fails when any of these requirements is missing, and obvious CARTO placeholders are rejected. Production route requests also require a paid or self-hosted Overpass-compatible provider whose exact host appears in `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS`. The selected provider is Overpass.ch, which requires `SAFEPATH_OSM_API_KEY` as a secret sent in the `X-API-Key` header.
 
 Install frontend tooling and build the committed stylesheet:
 
@@ -136,7 +136,8 @@ All supported settings are documented in [.env.example](.env.example). Important
 | `SAFEPATH_MAX_NODES_EXPLORED` | `100000` | Per-search exploration limit |
 | `SAFEPATH_GRAPH_CACHE_MAX_ENTRIES` | `8` | Maximum cached OSM graphs |
 | `SAFEPATH_GRAPH_CACHE_TTL_SECONDS` | `86400` | OSM graph cache lifetime |
-| `SAFEPATH_OSM_API_URL` | `https://overpass-api.de/api/interpreter` | Overpass-compatible road provider; public endpoint is development-only |
+| `SAFEPATH_OSM_API_URL` | `https://overpass-api.de/api/interpreter` | Overpass-compatible road provider; public endpoint is development-only. Selected production provider is Overpass.ch |
+| `SAFEPATH_OSM_API_KEY` | unset | Secret sent as `X-API-Key`; required when Overpass.ch is selected |
 | `SAFEPATH_OSM_API_ALLOWED_HOSTS` | `overpass-api.de` | Exact HTTPS hosts allowed for road data |
 | `SAFEPATH_OSM_API_PRODUCTION_ALLOWED_HOSTS` | unset | Exact paid or self-hosted provider hosts explicitly approved for production |
 | `SAFEPATH_OSM_API_MAX_BYTES` | `25000000` | Maximum total downloaded OSM bytes per load |
