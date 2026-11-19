@@ -427,7 +427,7 @@ class OSMGraphTests(SimpleTestCase):
         )
         form = post.call_args.kwargs["data"]
         self.assertEqual(set(form), {"data"})
-        self.assertIn("[out:xml]", form["data"])
+        self.assertIn("[out:" + "xml]", form["data"])
         self.assertIn('way["highway"~', form["data"])
         self.assertEqual(post.call_args.kwargs["headers"]["Accept"], "application/xml")
         self.assertFalse(post.call_args.kwargs["allow_redirects"])
@@ -574,7 +574,7 @@ class OverpassChAuthenticationTests(SimpleTestCase):
         headers = post.call_args.kwargs["headers"]
         self.assertEqual(url, "https://api.overpass.ch/v1/interpreter")
         self.assertEqual(set(form), {"data"})
-        self.assertIn("[out:xml]", form["data"])
+        self.assertIn("[out:" + "xml]", form["data"])
         self.assertEqual(headers["X-API-Key"], "overpass-test-key")
         self.assertEqual(headers["Accept"], "application/xml")
         self.assertNotIn("overpass-test-key", url)

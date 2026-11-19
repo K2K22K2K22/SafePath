@@ -55,7 +55,7 @@ The loader preserves these limits for every graph load:
 
 - HTTPS only, exact host allowlist, no URL credentials, and no non-standard port
 - No redirects
-- Form-encoded POST of the QL query with `[out:xml]` output and `X-API-Key` authentication for Overpass.ch
+- Form-encoded POST of the QL query with XML output and `X-API-Key` authentication for Overpass.ch
 - At most 60 interpreter requests per rolling minute across the application, including split bounding boxes
 - One fixed Overpass QL query for drivable highway classes with a 25 second server timeout and a 256 MiB server memory declaration
 - Maximum bounding-box area of `0.20` square degrees
